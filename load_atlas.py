@@ -13,9 +13,8 @@ from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph,
 from pydrake.systems.analysis import Simulator
 from pydrake.math import RollPitchYaw
 
-def load_atlas(builder, is_visualize = True):
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
-
+# plant is modified in place
+def load_atlas(plant, is_visualize = True):
     atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
     atlas = Parser(plant).AddModelFromFile(atlas_file)
 
@@ -33,14 +32,11 @@ def load_atlas(builder, is_visualize = True):
     plant.set_penetration_allowance(1.0e-3)
     plant.set_stiction_tolerance(1.0e-3)
 
-    if is_visualize:
-        ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
-
-    return plant
-
 if __name__ == "__main__":
     builder = DiagramBuilder()
-    plant = load_atlas(builder)
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
+    load_atlas(plant)
+    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
     diagram = builder.Build()
 
     diagram_context = diagram.CreateDefaultContext()
