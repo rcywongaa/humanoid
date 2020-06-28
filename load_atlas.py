@@ -14,7 +14,7 @@ from pydrake.systems.analysis import Simulator
 from pydrake.math import RollPitchYaw
 
 # plant is modified in place
-def load_atlas(plant, is_visualize = True):
+def load_atlas(plant):
     atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
     atlas = Parser(plant).AddModelFromFile(atlas_file)
 
@@ -32,6 +32,16 @@ def load_atlas(plant, is_visualize = True):
     plant.set_penetration_allowance(1.0e-3)
     plant.set_stiction_tolerance(1.0e-3)
 
+def set_atlas_initial_pose(plant, plant_context):
+    pelvis = plant.GetBodyByName("pelvis")
+    X_WP = RigidTransform(RollPitchYaw(0.0, 0.0, 0.0), np.array([0.0, 0.0, 0.95]))
+    plant.SetFreeBodyPose(plant_context, pelvis, X_WP)
+
+def set_null_input(plant, plant_context):
+    tau = np.zeros(plant.num_actuated_dofs())
+    plant.get_actuation_input_port().FixValue(plant_context, tau)
+
+
 if __name__ == "__main__":
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
@@ -42,12 +52,8 @@ if __name__ == "__main__":
     diagram_context = diagram.CreateDefaultContext()
     plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
 
-    tau = np.zeros(plant.num_actuated_dofs())
-    plant.get_actuation_input_port().FixValue(plant_context, tau)
-
-    pelvis = plant.GetBodyByName("pelvis")
-    X_WP = RigidTransform(RollPitchYaw(0.0, 0.0, 0.0), np.array([0.0, 0.0, 0.95]))
-    plant.SetFreeBodyPose(plant_context, pelvis, X_WP)
+    set_atlas_initial_pose(plant, plant_context)
+    set_null_input(plant, plant_context)
 
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.2)
