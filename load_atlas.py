@@ -14,19 +14,20 @@ from pydrake.systems.analysis import Simulator
 from pydrake.math import RollPitchYaw
 
 # plant is modified in place
-def load_atlas(plant):
+def load_atlas(plant, add_ground=False):
     atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
     atlas = Parser(plant).AddModelFromFile(atlas_file)
 
     static_friction = 1.0
     green = np.array([0.5, 1.0, 0.5, 1.0])
 
-    plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
-            "GroundVisuaGeometry", green)
+    if add_ground:
+        plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
+                "GroundVisuaGeometry", green)
 
-    ground_friction = CoulombFriction(1.0, 1.0)
-    plant.RegisterCollisionGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
-            "GroundCollisionGeometry", ground_friction)
+        ground_friction = CoulombFriction(1.0, 1.0)
+        plant.RegisterCollisionGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
+                "GroundCollisionGeometry", ground_friction)
 
     plant.Finalize()
     plant.set_penetration_allowance(1.0e-3)
@@ -45,7 +46,7 @@ def set_null_input(plant, plant_context):
 if __name__ == "__main__":
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
-    load_atlas(plant)
+    load_atlas(plant, add_ground=True)
     ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
     diagram = builder.Build()
 
