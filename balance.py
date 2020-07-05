@@ -23,18 +23,20 @@ import pdb
 
 NUM_ACTUATED_DOF = 30
 g = 9.81
-z_com = 0.5
+z_com = 1.2 # Obtained experimentally
 com_state_size = 4
 half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
 
+v_idx_act = 6 # Start index of actuated joints in generalized velocities
 
 class HumanoidController(LeafSystem):
     def __init__(self):
         LeafSystem.__init__(self)
         self.plant = MultibodyPlant(1.0e-3)
         load_atlas(self.plant)
-        self.upright_context = plant.CreateDefaultContext()
+        self.upright_context = self.plant.CreateDefaultContext()
+        set_atlas_initial_pose(self.plant, self.upright_context)
 
         # Assume y_desired is fixed for now
         # self.input_y_desired_idx = self.DeclareVectorInputPort("yd", BasicVector(zmp_state_size)).get_index()
@@ -77,18 +79,17 @@ class HumanoidController(LeafSystem):
 
         # Assume forces are applied at the center of the foot for now
         l_foot_contact_points = np.array([[0.0, 0.0, 0.0]]).T
-        Phi_lfoot = plant.CalcJacobianTranslationalVelocity(
-                plant_context, JacobianWrtVariable.kV, plant.GetFrameByName("l_foot"),
-                l_foot_contact_points, plant.world_frame(), plant.world_frame())
+        Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
+                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
+                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         r_foot_contact_points = np.array([[0.0, 0.0, 0.0]]).T
-        Phi_rfoot = plant.CalcJacobianTranslationalVelocity(
-                plant_context, JacobianWrtVariable.kV, plant.GetFrameByName("r_foot"),
-                r_foot_contact_points, plant.world_frame(), plant.world_frame())
+        Phi_rfoot = self.plant.CalcJacobianTranslationalVelocity(
+                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
+                r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Phi = np.vstack([Phi_lfoot, Phi_rfoot])
 
         ## Eq(8)
         # From np.sort(np.nonzero(B_7)[0]) we know that indices 0-5 are the unactuated 6 DOF floating base and 6-35 are the actuated 30 DOF robot joints
-        v_idx_act = 6 # Start index of actuated joints in generalized velocities
         H_f = H[0:v_idx_act,:]
         H_a = H[v_idx_act:,:]
         C_f = C_7[0:v_idx_act]
@@ -99,7 +100,7 @@ class HumanoidController(LeafSystem):
 
         ## Quadratic Program I
         prog = MathematicalProgram()
-        q_dd = prog.NewContinuousVariables(plant.num_velocities(), name="q_dd") # Ignore 6 DOF floating base
+        q_dd = prog.NewContinuousVariables(self.plant.num_velocities(), name="q_dd") # Ignore 6 DOF floating base
         self.q_dd = q_dd
         N_c = 2 # num contact points
         N_d = 4 # friction cone approximated as a i-pyramid
@@ -110,21 +111,21 @@ class HumanoidController(LeafSystem):
         self.lambd = lambd
 
         # Jacobians inoring the 6DOF floating base
-        J_lfoot = plant.CalcJacobianSpatialVelocity(
-                plant_context, JacobianWrtVariable.kV, plant.GetFrameByName("l_foot"),
-                l_foot_contact_points, plant.world_frame(), plant.world_frame())
-        J_rfoot = plant.CalcJacobianSpatialVelocity(
-                plant_context, JacobianWrtVariable.kV, plant.GetFrameByName("r_foot"),
-                r_foot_contact_points, plant.world_frame(), plant.world_frame())
+        J_lfoot = self.plant.CalcJacobianSpatialVelocity(
+                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
+                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+        J_rfoot = self.plant.CalcJacobianSpatialVelocity(
+                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
+                r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         J = J_lfoot + J_rfoot
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
+        self.eta = eta
 
-        w = 0.5
-        epsilon = 1.0e-8
-
-        x = prog.NewContinuousVariables(com_state_size, name="x") # x_com, y_com, x_com_d, y_com_d
-        u = prog.NewContinuousVariables(half_com_state_size, name="u") # x_com_dd, y_com_dd
+        self.x = prog.NewContinuousVariables(com_state_size, name="x") # x_com, y_com, x_com_d, y_com_d
+        x = self.x
+        self.u = prog.NewContinuousVariables(half_com_state_size, name="u") # x_com_dd, y_com_dd
+        u = self.u
 
         ## Eq(9)
         # Assume flat ground for now
@@ -143,17 +144,20 @@ class HumanoidController(LeafSystem):
                 v[i,j] = (n+mu*d)[:,i]
 
         ## Eq(10)
-        K_p = 0.2
-        K_d = 0.1
+        w = 10.0
+        epsilon = 1.0e-8
+        K_p = 0.8
+        K_d = 0.0
 
         # For generalized positions, first 7 values are 3 x,y,z + 4 quaternion
         q_idx_act = 7 # Start index of actuated joints in generalized positions
-        q_des = plant.GetPositions(self.upright_context)
-        q = plant.GetPositions(plant_context)
+        q_des = self.plant.GetPositions(self.upright_context)
+        q = self.plant.GetPositions(plant_context)
         # For generalized velocities, first 6 values are 3 xd, yd, zd + 3 rotational velocities
-        q_d = plant.GetVelocities(plant_context)
+        q_d = self.plant.GetVelocities(plant_context) # Note this not strictly the derivative of q
 
         q_dd_des = K_p*(q_des[q_idx_act:] - q[q_idx_act:]) - K_d*q_d[v_idx_act:]
+        self.q_dd_des = q_dd_des
         # We only care about the pose, not the floating base
         q_dd_err = q_dd_des - q_dd[v_idx_act:]
         prog.AddCost(
@@ -168,12 +172,12 @@ class HumanoidController(LeafSystem):
 
         ## Eq(12)
         alpha = 1.0
-        Jd_qd_lfoot = plant.CalcBiasTranslationalAcceleration(
-                plant_context, JacobianWrtVariable.kV, plant.GetFrameByName("l_foot"),
-                l_foot_contact_points, plant.world_frame(), plant.world_frame())
-        Jd_qd_rfoot = plant.CalcBiasTranslationalAcceleration(
-                plant_context, JacobianWrtVariable.kV, plant.GetFrameByName("r_foot"),
-                l_foot_contact_points, plant.world_frame(), plant.world_frame())
+        Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
+                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
+                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+        Jd_qd_rfoot = self.plant.CalcBiasTranslationalAcceleration(
+                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
+                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Jd_qd = np.vstack([Jd_qd_lfoot, Jd_qd_rfoot]).flatten()
         eq12_lhs = J.dot(q_dd) + Jd_qd
         eq12_rhs = -alpha*J.dot(q_d) + eta
@@ -181,10 +185,12 @@ class HumanoidController(LeafSystem):
             prog.AddConstraint(eq12_lhs[i] == eq12_rhs[i])
 
         ## Eq(13)
-        self.tau = lambda q_dd, lambd : np.linalg.inv(B_a).dot(H_a.dot(q_dd) + C_a - Phi_a_T.dot(lambd)) 
+        def tau(q_dd, lambd):
+            return np.linalg.inv(B_a).dot(H_a.dot(q_dd) + C_a - Phi_a_T.dot(lambd))
+        self.tau = tau
         eq13_lhs = self.tau(q_dd, lambd)
-        tau_min = -10.0
-        tau_max = 10.0
+        tau_min = -100.0
+        tau_max = 100.0
         for i in range(eq13_lhs.shape[0]):
             prog.AddConstraint(eq13_lhs[i] >= tau_min)
             prog.AddConstraint(eq13_lhs[i] <= tau_max)
@@ -206,24 +212,47 @@ class HumanoidController(LeafSystem):
             prog.AddConstraint(eta[i] >= eta_min[i])
             prog.AddConstraint(eta[i] <= eta_max[i])
 
+        ## Additionally, enforce x as com
+        com_position = self.plant.CalcCenterOfMassPosition(plant_context)
+        com_position_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
+                plant_context, JacobianWrtVariable.kV,
+                self.plant.world_frame(), self.plant.world_frame()).dot(q_d)
+        prog.AddConstraint(x[0] == com_position[0])
+        prog.AddConstraint(x[1] == com_position[1])
+        prog.AddConstraint(x[2] == com_position_d[0])
+        prog.AddConstraint(x[3] == com_position_d[1])
+
         return prog
 
     def calcTorqueOutput(self, context, output):
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
+        # print(f"q = {q_v[0:37]}")
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
+        # Use this to obtain z_com
+        # print(f"COM = {self.plant.CalcCenterOfMassPosition(current_plant_context)}")
 
         prog = self.create_qp1(current_plant_context)
         result = Solve(prog)
-        print(f"Success: {result.is_success()}")
+        print(f"Success: {result.is_success()}, {result.get_optimal_cost()}")
         if not result.is_success():
-            pdb.set_trace()
+            exit(-1)
         q_dd_sol = result.GetSolution(self.q_dd)
         lambd_sol = result.GetSolution(self.lambd)
+        x_sol = result.GetSolution(self.x)
+        u_sol = result.GetSolution(self.u)
+        beta_sol = result.GetSolution(self.beta)
+        eta_sol = result.GetSolution(self.eta)
+        # print(f"V(x,y) = {self.V(x_sol, u_sol)}")
+        q_dd_err = self.q_dd_des - q_dd_sol[v_idx_act:]
+        print(f"q_dd_err squared = {q_dd_err.dot(q_dd_err)}")
+        # print(f"beta = {beta_sol}")
+        # print(f"lambda = {lambd_sol}")
         tau = self.tau(q_dd_sol, lambd_sol)
+        # print(f"tau = {tau}")
         output.SetFromVector(tau)
 
-if __name__ == "__main__":
+def main():
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
     load_atlas(plant, add_ground=True)
@@ -243,4 +272,7 @@ if __name__ == "__main__":
 
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.2)
-    simulator.AdvanceTo(2.0)
+    simulator.AdvanceTo(4.0)
+
+if __name__ == "__main__":
+    main()
