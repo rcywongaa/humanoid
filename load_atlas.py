@@ -18,10 +18,10 @@ def load_atlas(plant, add_ground=False):
     atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
     atlas = Parser(plant).AddModelFromFile(atlas_file)
 
-    static_friction = 1.0
-    green = np.array([0.5, 1.0, 0.5, 1.0])
-
     if add_ground:
+        static_friction = 1.0
+        green = np.array([0.5, 1.0, 0.5, 1.0])
+
         plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
                 "GroundVisuaGeometry", green)
 
