@@ -167,8 +167,10 @@ class HumanoidController(LeafSystem):
                 + eta.dot(eta))
 
         ## Eq(11)
-        for i in range(H_f.shape[0]):
-            prog.AddConstraint((H_f.dot(q_dd)+C_f)[i] == (Phi_f_T.dot(lambd))[0])
+        eq11_lhs = H_f.dot(q_dd)+C_f
+        eq11_rhs = Phi_f_T.dot(lambd)
+        for i in range(eq11_lhs.size):
+            prog.AddConstraint(eq11_lhs[i] == eq11_rhs[i])
 
         ## Eq(12)
         alpha = 1.0
