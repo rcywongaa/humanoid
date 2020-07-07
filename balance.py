@@ -214,7 +214,7 @@ class HumanoidController(LeafSystem):
             prog.AddConstraint(eta[i] >= eta_min[i])
             prog.AddConstraint(eta[i] <= eta_max[i])
 
-        ## Additionally, enforce x as com
+        ## Enforce x as com
         com_position = self.plant.CalcCenterOfMassPosition(plant_context)
         com_position_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV,
@@ -223,6 +223,18 @@ class HumanoidController(LeafSystem):
         prog.AddConstraint(x[1] == com_position[1])
         prog.AddConstraint(x[2] == com_position_d[0])
         prog.AddConstraint(x[3] == com_position_d[1])
+
+        ## Enforce u as com_dd
+        com_position_dd = (
+                self.plant.CalcBiasCenterOfMassTranslationalAcceleration(
+                    plant_context, JacobianWrtVariable.kV,
+                    self.plant.world_frame(), self.plant.world_frame()) +
+                self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
+                    plant_context, JacobianWrtVariable.kV,
+                    self.plant.world_frame(), self.plant.world_frame())
+                .dot(q_dd))
+        prog.AddConstraint(u[0] == com_position_dd[0])
+        prog.AddConstraint(u[1] == com_position_dd[1])
 
         return prog
 
