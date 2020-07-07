@@ -31,8 +31,30 @@ com_state_size = 4
 half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
-N_c = 16 # num contact points
-N_c_foot = int(N_c/2) # Num contacts per foot
+
+l_foot_contact_points = np.array([
+    [-0.0876,0.066,-0.07645], # left heel
+    [-0.0876,-0.0626,-0.07645], # right heel
+    [0.1728,0.066,-0.07645], # left toe
+    [0.1728,-0.0626,-0.07645], # right toe
+    [0.086,0.066,-0.07645], # left midfoot_front
+    [0.086,-0.0626,-0.07645], # right midfoot_front
+    [-0.0008,0.066,-0.07645], # left midfoot_rear
+    [-0.0008,-0.0626,-0.07645] # right midfoot_rear
+]).T
+
+r_foot_contact_points = np.array([
+    [-0.0876,0.0626,-0.07645], # left heel
+    [-0.0876,-0.066,-0.07645], # right heel
+    [0.1728,0.0626,-0.07645], # left toe
+    [0.1728,-0.066,-0.07645], # right toe
+    [0.086,0.0626,-0.07645], # left midfoot_front
+    [0.086,-0.066,-0.07645], # right midfoot_front
+    [-0.0008,0.0626,-0.07645], # left midfoot_rear
+    [-0.0008,-0.066,-0.07645] # right midfoot_rear
+]).T
+N_c_foot = l_foot_contact_points.shape[1] # Num contacts per foot
+N_c = 2*N_c_foot # num contact points
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
@@ -86,31 +108,10 @@ class HumanoidController(LeafSystem):
         C_7 = self.plant.CalcBiasTerm(plant_context) # C in Eq(7)
         B_7 = self.plant.MakeActuationMatrix()
 
-        # Assume forces are applied at the center of the foot for now
-        l_foot_contact_points = np.array([
-            [-0.0876,0.066,-0.07645], # left heel
-            [-0.0876,-0.0626,-0.07645], # right heel
-            [0.1728,0.066,-0.07645], # left toe
-            [0.1728,-0.0626,-0.07645], # right toe
-            [0.086,0.066,-0.07645], # left midfoot_front
-            [0.086,-0.0626,-0.07645], # right midfoot_front
-            [-0.0008,0.066,-0.07645], # left midfoot_rear
-            [-0.0008,-0.0626,-0.07645] # right midfoot_rear
-        ]).T
         Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
                 l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
 
-        r_foot_contact_points = np.array([
-            [-0.0876,0.0626,-0.07645], # left heel
-            [-0.0876,-0.066,-0.07645], # right heel
-            [0.1728,0.0626,-0.07645], # left toe
-            [0.1728,-0.066,-0.07645], # right toe
-            [0.086,0.0626,-0.07645], # left midfoot_front
-            [0.086,-0.066,-0.07645], # right midfoot_front
-            [-0.0008,0.0626,-0.07645], # left midfoot_rear
-            [-0.0008,-0.066,-0.07645] # right midfoot_rear
-        ]).T
         Phi_rfoot = self.plant.CalcJacobianTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
                 r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
