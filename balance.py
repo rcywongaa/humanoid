@@ -28,6 +28,7 @@ z_com = 1.2 # Obtained experimentally
 com_state_size = 4
 half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
+mbp_time_step = 1.0e-3
 
 v_idx_act = 6 # Start index of actuated joints in generalized velocities
 
@@ -35,7 +36,7 @@ class HumanoidController(LeafSystem):
     def __init__(self):
         self.start_time = None
         LeafSystem.__init__(self)
-        self.plant = MultibodyPlant(1.0e-3)
+        self.plant = MultibodyPlant(mbp_time_step)
         load_atlas(self.plant)
         self.upright_context = self.plant.CreateDefaultContext()
         set_atlas_initial_pose(self.plant, self.upright_context)
@@ -279,7 +280,7 @@ class HumanoidController(LeafSystem):
 
 def main():
     builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
     load_atlas(plant, add_ground=True)
     plant_context = plant.CreateDefaultContext()
 
