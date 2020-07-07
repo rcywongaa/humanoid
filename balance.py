@@ -19,6 +19,7 @@ from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, LeafSystem
 
+import time
 import pdb
 
 NUM_ACTUATED_DOF = 30
@@ -32,6 +33,7 @@ v_idx_act = 6 # Start index of actuated joints in generalized velocities
 
 class HumanoidController(LeafSystem):
     def __init__(self):
+        self.start_time = None
         LeafSystem.__init__(self)
         self.plant = MultibodyPlant(1.0e-3)
         load_atlas(self.plant)
@@ -154,7 +156,8 @@ class HumanoidController(LeafSystem):
         q_des = self.plant.GetPositions(self.upright_context)
         q = self.plant.GetPositions(plant_context)
         # For generalized velocities, first 6 values are 3 xd, yd, zd + 3 rotational velocities
-        q_d = self.plant.GetVelocities(plant_context) # Note this not strictly the derivative of q
+        # Hence this not strictly the derivative of q
+        q_d = self.plant.GetVelocities(plant_context)
 
         q_dd_des = K_p*(q_des[q_idx_act:] - q[q_idx_act:]) - K_d*q_d[v_idx_act:]
         self.q_dd_des = q_dd_des
@@ -228,8 +231,8 @@ class HumanoidController(LeafSystem):
         com_position_dd = (
                 self.plant.CalcBiasCenterOfMassTranslationalAcceleration(
                     plant_context, JacobianWrtVariable.kV,
-                    self.plant.world_frame(), self.plant.world_frame()) +
-                self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
+                    self.plant.world_frame(), self.plant.world_frame())
+                + self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                     plant_context, JacobianWrtVariable.kV,
                     self.plant.world_frame(), self.plant.world_frame())
                 .dot(q_dd))
@@ -239,6 +242,14 @@ class HumanoidController(LeafSystem):
         return prog
 
     def calcTorqueOutput(self, context, output):
+        if not self.start_time:
+            self.start_time = time.time()
+
+        ## FIXME: Start controller only after foot makes contact with ground
+        # if True:
+        if time.time() - self.start_time < 0.2:
+            output.SetFromVector(np.zeros(30))
+            return
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         # print(f"q = {q_v[0:37]}")
         current_plant_context = self.plant.CreateDefaultContext()
