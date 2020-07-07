@@ -149,6 +149,7 @@ class HumanoidController(LeafSystem):
                 r_foot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())
 
         J = J_lfoot + J_rfoot
+        assert(J.shape == (N_c*N_f, TOTAL_DOF))
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
         self.eta = eta
@@ -169,7 +170,7 @@ class HumanoidController(LeafSystem):
             [0.0, 0.0, 1.0, -1.0],
             [0.0, 0.0, 0.0, 0.0]])
         mu = 0.2
-        v = np.zeros((N_d, N_c, 3))
+        v = np.zeros((N_d, N_c, N_f))
         for i in range(N_d):
             for j in range(N_c):
                 v[i,j] = (n+mu*d)[:,i]
