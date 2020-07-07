@@ -22,13 +22,19 @@ from pydrake.systems.framework import BasicVector, LeafSystem
 import time
 import pdb
 
+FLOATING_BASE_DOF = 6
 NUM_ACTUATED_DOF = 30
+TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
 g = 9.81
 z_com = 1.2 # Obtained experimentally
 com_state_size = 4
 half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
+N_c = 16 # num contact points
+N_c_foot = int(N_c/2) # Num contacts per foot
+N_d = 4 # friction cone approximated as a i-pyramid
+N_f = 3 # contact force dimension
 
 v_idx_act = 6 # Start index of actuated joints in generalized velocities
 
@@ -81,11 +87,30 @@ class HumanoidController(LeafSystem):
         B_7 = self.plant.MakeActuationMatrix()
 
         # Assume forces are applied at the center of the foot for now
-        l_foot_contact_points = np.array([[0.0, 0.0, 0.0]]).T
+        l_foot_contact_points = np.array([
+            [-0.0876,0.066,-0.07645], # left heel
+            [-0.0876,-0.0626,-0.07645], # right heel
+            [0.1728,0.066,-0.07645], # left toe
+            [0.1728,-0.0626,-0.07645], # right toe
+            [0.086,0.066,-0.07645], # left midfoot_front
+            [0.086,-0.0626,-0.07645], # right midfoot_front
+            [-0.0008,0.066,-0.07645], # left midfoot_rear
+            [-0.0008,-0.0626,-0.07645] # right midfoot_rear
+        ]).T
         Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
                 l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-        r_foot_contact_points = np.array([[0.0, 0.0, 0.0]]).T
+
+        r_foot_contact_points = np.array([
+            [-0.0876,0.0626,-0.07645], # left heel
+            [-0.0876,-0.066,-0.07645], # right heel
+            [0.1728,0.0626,-0.07645], # left toe
+            [0.1728,-0.066,-0.07645], # right toe
+            [0.086,0.0626,-0.07645], # left midfoot_front
+            [0.086,-0.066,-0.07645], # right midfoot_front
+            [-0.0008,0.0626,-0.07645], # left midfoot_rear
+            [-0.0008,-0.066,-0.07645] # right midfoot_rear
+        ]).T
         Phi_rfoot = self.plant.CalcJacobianTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
                 r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
@@ -105,21 +130,23 @@ class HumanoidController(LeafSystem):
         prog = MathematicalProgram()
         q_dd = prog.NewContinuousVariables(self.plant.num_velocities(), name="q_dd") # Ignore 6 DOF floating base
         self.q_dd = q_dd
-        N_c = 2 # num contact points
-        N_d = 4 # friction cone approximated as a i-pyramid
-        N_f = 3 # contact force dimension
         beta = prog.NewContinuousVariables(N_d,N_c, name="beta")
         self.beta = beta
         lambd = prog.NewContinuousVariables(N_f*N_c, name="lambda")
         self.lambd = lambd
 
-        # Jacobians inoring the 6DOF floating base
-        J_lfoot = self.plant.CalcJacobianSpatialVelocity(
+        # Jacobians ignoring the 6DOF floating base
+        J_lfoot = np.zeros((FLOATING_BASE_DOF*N_c_foot, TOTAL_DOF))
+        for i in range(N_c_foot):
+            J_lfoot[FLOATING_BASE_DOF*i:FLOATING_BASE_DOF*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-        J_rfoot = self.plant.CalcJacobianSpatialVelocity(
+                l_foot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())
+        J_rfoot = np.zeros((FLOATING_BASE_DOF*N_c_foot, TOTAL_DOF))
+        for i in range(N_c_foot):
+            J_rfoot[FLOATING_BASE_DOF*i:FLOATING_BASE_DOF*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+                r_foot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())
+
         J = J_lfoot + J_rfoot
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
@@ -183,7 +210,7 @@ class HumanoidController(LeafSystem):
                 l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Jd_qd_rfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+                r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Jd_qd = np.vstack([Jd_qd_lfoot, Jd_qd_rfoot]).flatten()
         eq12_lhs = J.dot(q_dd) + Jd_qd
         eq12_rhs = -alpha*J.dot(q_d) + eta
