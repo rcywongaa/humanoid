@@ -240,6 +240,12 @@ class HumanoidController(LeafSystem):
         prog.AddConstraint(u[0] == com_position_dd[0])
         prog.AddConstraint(u[1] == com_position_dd[1])
 
+        ## Use PD to control z_com
+        z_K_p = 0.5
+        z_K_d = 0.2
+        prog.AddConstraint(com_position_dd[2] == -z_K_p*(com_position[2] - z_com) - z_K_d*(com_position_d[2]))
+        # prog.AddConstraint(com_position_dd[2] == -z_K_d*(com_position_d[2]))
+
         return prog
 
     def calcTorqueOutput(self, context, output):
