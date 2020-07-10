@@ -31,7 +31,13 @@ com_state_size = 4
 half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
+tau_min = -200.0
+tau_max = 200.0
+mu = 1.0 # Coefficient of friction
+eta_min = -0.2
+eta_max = 0.2
 
+# Taken from drake/drake-build/install/share/drake/examples/atlas/urdf/atlas_minimal_contact.urdf
 l_foot_contact_points = np.array([
     [-0.0876,0.066,-0.07645], # left heel
     [-0.0876,-0.0626,-0.07645], # right heel
@@ -127,9 +133,24 @@ class HumanoidController(LeafSystem):
         Phi_f_T = Phi.T[0:v_idx_act:,:]
         Phi_a_T = Phi.T[v_idx_act:,:]
 
+        ## Eq(9)
+        # Assume flat ground for now
+        n = np.array([
+            [0],
+            [0],
+            [1.0]])
+        d = np.array([
+            [1.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, -1.0],
+            [0.0, 0.0, 0.0, 0.0]])
+        v = np.zeros((N_d, N_c, N_f))
+        for i in range(N_d):
+            for j in range(N_c):
+                v[i,j] = (n+mu*d)[:,i]
+
         ## Quadratic Program I
         prog = MathematicalProgram()
-        q_dd = prog.NewContinuousVariables(self.plant.num_velocities(), name="q_dd") # Ignore 6 DOF floating base
+        q_dd = prog.NewContinuousVariables(self.plant.num_velocities(), name="q_dd") # To ignore 6 DOF floating base
         self.q_dd = q_dd
         beta = prog.NewContinuousVariables(N_d,N_c, name="beta")
         self.beta = beta
@@ -158,22 +179,6 @@ class HumanoidController(LeafSystem):
         x = self.x
         self.u = prog.NewContinuousVariables(half_com_state_size, name="u") # x_com_dd, y_com_dd
         u = self.u
-
-        ## Eq(9)
-        # Assume flat ground for now
-        n = np.array([
-            [0],
-            [0],
-            [1.0]])
-        d = np.array([
-            [1.0, -1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, -1.0],
-            [0.0, 0.0, 0.0, 0.0]])
-        mu = 0.2
-        v = np.zeros((N_d, N_c, N_f))
-        for i in range(N_d):
-            for j in range(N_c):
-                v[i,j] = (n+mu*d)[:,i]
 
         ## Eq(10)
         w = 10.0
@@ -224,8 +229,6 @@ class HumanoidController(LeafSystem):
             return np.linalg.inv(B_a).dot(H_a.dot(q_dd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
         eq13_lhs = self.tau(q_dd, lambd)
-        tau_min = -100.0
-        tau_max = 100.0
         for i in range(eq13_lhs.shape[0]):
             prog.AddConstraint(eq13_lhs[i] >= tau_min)
             prog.AddConstraint(eq13_lhs[i] <= tau_max)
@@ -241,11 +244,9 @@ class HumanoidController(LeafSystem):
             prog.AddConstraint(b >= 0.0)
 
         ## Eq(16)
-        eta_min = -0.2*np.ones(J.shape[0])
-        eta_max = 0.2*np.ones(J.shape[0])
         for i in range(eta.shape[0]):
-            prog.AddConstraint(eta[i] >= eta_min[i])
-            prog.AddConstraint(eta[i] <= eta_max[i])
+            prog.AddConstraint(eta[i] >= eta_min)
+            prog.AddConstraint(eta[i] <= eta_max)
 
         ## Enforce x as com
         com_position = self.plant.CalcCenterOfMassPosition(plant_context)
