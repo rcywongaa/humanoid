@@ -35,7 +35,7 @@ def load_atlas(plant, add_ground=False):
 
 def set_atlas_initial_pose(plant, plant_context):
     pelvis = plant.GetBodyByName("pelvis")
-    X_WP = RigidTransform(RollPitchYaw(0.0, 0.0, 0.0), np.array([0.0, 0.0, 0.95]))
+    X_WP = RigidTransform(RollPitchYaw(0.0, 0.0, 0.0), np.array([0.0, 0.0, 0.94]))
     plant.SetFreeBodyPose(plant_context, pelvis, X_WP)
 
 def set_null_input(plant, plant_context):

@@ -282,8 +282,7 @@ class HumanoidController(LeafSystem):
             self.start_time = context.get_time()
 
         ## FIXME: Start controller only after foot makes contact with ground
-        # if True:
-        if context.get_time() - self.start_time < 0.1:
+        if context.get_time() - self.start_time < 0.01:
             output.SetFromVector(np.zeros(30))
             return
 
