@@ -279,13 +279,14 @@ class HumanoidController(LeafSystem):
 
     def calcTorqueOutput(self, context, output):
         if not self.start_time:
-            self.start_time = time.time()
+            self.start_time = context.get_time()
 
         ## FIXME: Start controller only after foot makes contact with ground
         # if True:
-        if time.time() - self.start_time < 0.2:
+        if context.get_time() - self.start_time < 0.1:
             output.SetFromVector(np.zeros(30))
             return
+
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         # print(f"q = {q_v[0:37]}")
         current_plant_context = self.plant.CreateDefaultContext()
