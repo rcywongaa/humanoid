@@ -111,7 +111,9 @@ class HumanoidController(LeafSystem):
     def create_qp1(self, plant_context):
         ## Eq(7)
         H = self.plant.CalcMassMatrixViaInverseDynamics(plant_context)
-        C_7 = self.plant.CalcBiasTerm(plant_context) # C in Eq(7)
+        # Note that CalcGravityGeneralizedForces assumes the form   Mv̇ + C(q, v)v = tau_g(q) + tau_app
+        # while Eq(7) assumes gravity is accounted in C
+        C_7 = self.plant.CalcBiasTerm(plant_context) - self.plant.CalcGravityGeneralizedForces(plant_context)
         B_7 = self.plant.MakeActuationMatrix()
 
         Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
