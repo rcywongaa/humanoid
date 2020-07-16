@@ -65,6 +65,19 @@ N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
 v_idx_act = 6 # Start index of actuated joints in generalized velocities
+q_idx_act = 7 # Start index of actuated joints in generalized positions
+
+def calcAngleDiff(targetA, sourceA):
+    a = targetA - sourceA
+    a = (a + np.pi) % (2*np.pi) - np.pi
+    return a
+
+def calcPoseError(target, source):
+    err = target - source
+    err[0] = calcAngleDiff(target[0], source[0])
+    err[1] = calcAngleDiff(target[1], source[1])
+    err[2] = calcAngleDiff(target[2], source[2])
+    return err
 
 class HumanoidController(LeafSystem):
     def __init__(self):
@@ -111,8 +124,8 @@ class HumanoidController(LeafSystem):
     def create_qp1(self, plant_context):
         ## Eq(7)
         H = self.plant.CalcMassMatrixViaInverseDynamics(plant_context)
-        # Note that CalcGravityGeneralizedForces assumes the form   Mv̇ + C(q, v)v = tau_g(q) + tau_app
-        # while Eq(7) assumes gravity is accounted in C
+        # Note that CalcGravityGeneralizedForces assumes the form Mv̇ + C(q, v)v = tau_g(q) + tau_app
+        # while Eq(7) assumes gravity is accounted in C (on the left hand side)
         C_7 = self.plant.CalcBiasTerm(plant_context) - self.plant.CalcGravityGeneralizedForces(plant_context)
         B_7 = self.plant.MakeActuationMatrix()
 
@@ -189,17 +202,20 @@ class HumanoidController(LeafSystem):
         K_d = 0.0
 
         # For generalized positions, first 7 values are 3 x,y,z + 4 quaternion
-        q_idx_act = 7 # Start index of actuated joints in generalized positions
         q_des = self.plant.GetPositions(self.upright_context)
+        q_des = self.plant.MapQDotToVelocity(self.upright_context, q_des)
         q = self.plant.GetPositions(plant_context)
-        # For generalized velocities, first 6 values are 3 xd, yd, zd + 3 rotational velocities
+        q = self.plant.MapQDotToVelocity(self.upright_context, q)
+        # For generalized velocities, first 6 values are 3 rotational velocities + 3 xd, yd, zd
         # Hence this not strictly the derivative of q
         q_d = self.plant.GetVelocities(plant_context)
 
-        q_dd_des = K_p*(q_des[q_idx_act:] - q[q_idx_act:]) - K_d*q_d[v_idx_act:]
+        # Convert q, q_des to generalized velocities form
+        ignored_pose_idx = {3, 4} # Ignore x position, y position
+        nominal_pose_idx = list(set(range(TOTAL_DOF)) - set(ignored_pose_idx))
+        self.nominal_pose_idx = nominal_pose_idx
+        q_dd_des = K_p*(calcPoseError(q_des[nominal_pose_idx], q[nominal_pose_idx])) - K_d*q_d[nominal_pose_idx]
         self.q_dd_des = q_dd_des
-        # We only care about the pose, not the floating base
-        q_dd_err = q_dd_des - q_dd[v_idx_act:]
         prog.AddCost(
                 self.V(x, u)
                 + w*((q_dd_err).dot(q_dd_err))
