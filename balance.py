@@ -190,10 +190,10 @@ class HumanoidController(LeafSystem):
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
         self.eta = eta
 
-        self.x = prog.NewContinuousVariables(com_state_size, name="x") # x_com, y_com, x_com_d, y_com_d
-        x = self.x
-        self.u = prog.NewContinuousVariables(half_com_state_size, name="u") # x_com_dd, y_com_dd
-        u = self.u
+        x = prog.NewContinuousVariables(com_state_size, name="x") # x_com, y_com, x_com_d, y_com_d
+        self.x = x
+        u = prog.NewContinuousVariables(half_com_state_size, name="u") # x_com_dd, y_com_dd
+        self.u = u
 
         ## Eq(10)
         w = 10.0
@@ -267,17 +267,17 @@ class HumanoidController(LeafSystem):
             prog.AddConstraint(eta[i] <= eta_max)
 
         ## Enforce x as com
-        com_position = self.plant.CalcCenterOfMassPosition(plant_context)
-        com_position_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
+        com = self.plant.CalcCenterOfMassPosition(plant_context)
+        com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV,
                 self.plant.world_frame(), self.plant.world_frame()).dot(q_d)
-        prog.AddConstraint(x[0] == com_position[0])
-        prog.AddConstraint(x[1] == com_position[1])
-        prog.AddConstraint(x[2] == com_position_d[0])
-        prog.AddConstraint(x[3] == com_position_d[1])
+        prog.AddConstraint(x[0] == com[0])
+        prog.AddConstraint(x[1] == com[1])
+        prog.AddConstraint(x[2] == com_d[0])
+        prog.AddConstraint(x[3] == com_d[1])
 
         ## Enforce u as com_dd
-        com_position_dd = (
+        com_dd = (
                 self.plant.CalcBiasCenterOfMassTranslationalAcceleration(
                     plant_context, JacobianWrtVariable.kV,
                     self.plant.world_frame(), self.plant.world_frame())
@@ -285,8 +285,8 @@ class HumanoidController(LeafSystem):
                     plant_context, JacobianWrtVariable.kV,
                     self.plant.world_frame(), self.plant.world_frame())
                 .dot(q_dd))
-        prog.AddConstraint(u[0] == com_position_dd[0])
-        prog.AddConstraint(u[1] == com_position_dd[1])
+        prog.AddConstraint(u[0] == com_dd[0])
+        prog.AddConstraint(u[1] == com_dd[1])
 
         ## Use PD to control z_com
         z_K_p = 0.5
