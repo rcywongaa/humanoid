@@ -18,6 +18,7 @@ from pydrake.multibody.tree import JacobianWrtVariable
 from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, LeafSystem
+from pydrake.common.eigen_geometry import Quaternion
 
 import time
 import pdb
@@ -67,17 +68,29 @@ N_f = 3 # contact force dimension
 v_idx_act = 6 # Start index of actuated joints in generalized velocities
 q_idx_act = 7 # Start index of actuated joints in generalized positions
 
-def calcAngleDiff(targetA, sourceA):
-    a = targetA - sourceA
-    a = (a + np.pi) % (2*np.pi) - np.pi
-    return a
+def normalize(q):
+    return q / np.linalg.norm(q)
+
+# From http://www.nt.ntnu.no/users/skoge/prost/proceedings/ecc-2013/data/papers/0927.pdf
+def calcAngularError(q_target, q_source):
+    try:
+        quat_err = Quaternion(normalize(q_target)).multiply(Quaternion(normalize(q_source)).inverse())
+        if quat_err.w() < 0:
+            return -quat_err.xyz()
+        else:
+            return quat_err.xyz()
+    except:
+        pdb.set_trace()
 
 def calcPoseError(target, source):
-    err = target - source
-    err[0] = calcAngleDiff(target[0], source[0])
-    err[1] = calcAngleDiff(target[1], source[1])
-    err[2] = calcAngleDiff(target[2], source[2])
-    return err
+    assert(target.size == source.size)
+    # Make sure pose is expressed in generalized positions (quaternion base)
+    assert(target.size == NUM_ACTUATED_DOF + q_idx_act)
+
+    correction = np.zeros(target.shape[0]-1)
+    correction[0:3] = calcAngularError(target[0:4], source[0:4])
+    correction[3:] = (target - source)[4:]
+    return correction
 
 class HumanoidController(LeafSystem):
     def __init__(self):
@@ -87,6 +100,7 @@ class HumanoidController(LeafSystem):
         load_atlas(self.plant)
         self.upright_context = self.plant.CreateDefaultContext()
         set_atlas_initial_pose(self.plant, self.upright_context)
+        self.q_des = self.plant.GetPositions(self.upright_context)
 
         # Assume y_desired is fixed for now
         # self.input_y_desired_idx = self.DeclareVectorInputPort("yd", BasicVector(zmp_state_size)).get_index()
@@ -201,21 +215,20 @@ class HumanoidController(LeafSystem):
         K_p = 0.8
         K_d = 0.0
 
-        # For generalized positions, first 7 values are 3 x,y,z + 4 quaternion
-        q_des = self.plant.GetPositions(self.upright_context)
-        q_des = self.plant.MapQDotToVelocity(self.upright_context, q_des)
+        # For generalized positions, first 7 values are 4 quaternion + 3 x,y,z
         q = self.plant.GetPositions(plant_context)
-        q = self.plant.MapQDotToVelocity(self.upright_context, q)
         # For generalized velocities, first 6 values are 3 rotational velocities + 3 xd, yd, zd
         # Hence this not strictly the derivative of q
         q_d = self.plant.GetVelocities(plant_context)
 
         # Convert q, q_des to generalized velocities form
-        ignored_pose_idx = {3, 4} # Ignore x position, y position
-        nominal_pose_idx = list(set(range(TOTAL_DOF)) - set(ignored_pose_idx))
-        self.nominal_pose_idx = nominal_pose_idx
-        q_dd_des = K_p*(calcPoseError(q_des[nominal_pose_idx], q[nominal_pose_idx])) - K_d*q_d[nominal_pose_idx]
+        q_err = calcPoseError(self.q_des, q)
+        ignored_pose_indices = {3, 4} # Ignore x position, y position
+        relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
+        self.relevant_pose_indices = relevant_pose_indices
+        q_dd_des = K_p*q_err - K_d*q_d
         self.q_dd_des = q_dd_des
+        q_dd_err = q_dd_des[relevant_pose_indices] - q_dd[relevant_pose_indices]
         prog.AddCost(
                 self.V(x, u)
                 + w*((q_dd_err).dot(q_dd_err))
@@ -324,8 +337,6 @@ class HumanoidController(LeafSystem):
         beta_sol = result.GetSolution(self.beta)
         eta_sol = result.GetSolution(self.eta)
         # print(f"V(x,y) = {self.V(x_sol, u_sol)}")
-        q_dd_err = self.q_dd_des - q_dd_sol[v_idx_act:]
-        print(f"q_dd_err squared = {q_dd_err.dot(q_dd_err)}")
         # print(f"beta = {beta_sol}")
         # print(f"lambda = {lambd_sol}")
         tau = self.tau(q_dd_sol, lambd_sol)
