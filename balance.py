@@ -359,8 +359,8 @@ def main():
     set_atlas_initial_pose(plant, plant_context)
 
     simulator = Simulator(diagram, diagram_context)
-    simulator.set_target_realtime_rate(0.2)
-    simulator.AdvanceTo(4.0)
+    simulator.set_target_realtime_rate(0.5)
+    simulator.AdvanceTo(5.0)
 
 if __name__ == "__main__":
     main()
