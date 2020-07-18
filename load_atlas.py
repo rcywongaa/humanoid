@@ -13,9 +13,12 @@ from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph,
 from pydrake.systems.analysis import Simulator
 from pydrake.math import RollPitchYaw
 
+# Floating base is attached at the pelvis link
+
 # plant is modified in place
 def load_atlas(plant, add_ground=False):
-    atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
+    atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_minimal_contact.urdf")
+    # atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
     atlas = Parser(plant).AddModelFromFile(atlas_file)
 
     if add_ground:
