@@ -319,11 +319,8 @@ class HumanoidController(LeafSystem):
             return
 
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
-        # print(f"q = {q_v[0:37]}")
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
-        # Use this to obtain z_com
-        # print(f"COM = {self.plant.CalcCenterOfMassPosition(current_plant_context)}")
 
         prog = self.create_qp1(current_plant_context)
         result = Solve(prog)
