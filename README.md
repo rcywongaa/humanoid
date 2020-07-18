@@ -12,6 +12,41 @@
    ```
 1. Run `python3 load_atlas.py`
 
+## Troubleshooting
+
+### Out of memory when building drake
+In `CMakeLists.txt`, add `--jobs 4` after `${BAZEL_TARGETS}`
+```
+ExternalProject_Add(drake_cxx_python
+  SOURCE_DIR "${PROJECT_SOURCE_DIR}"
+  CONFIGURE_COMMAND :
+  BUILD_COMMAND
+    ${BAZEL_ENV}
+    "${Bazel_EXECUTABLE}"
+    ${BAZEL_STARTUP_ARGS}
+    build
+    ${BAZEL_ARGS}
+    ${BAZEL_TARGETS}
+    --jobs 4
+  BUILD_IN_SOURCE ON
+  BUILD_ALWAYS ON
+  INSTALL_COMMAND
+    ${BAZEL_ENV}
+    "${Bazel_EXECUTABLE}"
+    ${BAZEL_STARTUP_ARGS}
+    run
+    ${BAZEL_ARGS}
+    ${BAZEL_TARGETS}
+    --
+    ${BAZEL_TARGETS_ARGS}
+  USES_TERMINAL_BUILD ON
+  USES_TERMINAL_INSTALL ON
+)
+```
+
+### `ModuleNotFoundError: No module named 'vtkCommonCorePython'` when launching drake-visualizer
+In `tools/workspace/drake_visualizer/repository.bzl` set `USE_SYSTEM_VTK=OFF`
+
 ## Resources
 
 ### Simulation resources
