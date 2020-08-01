@@ -16,6 +16,7 @@ from pydrake.systems.controllers import LinearQuadraticRegulator
 from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
 from pydrake.multibody.tree import JacobianWrtVariable
 from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph
+from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, LeafSystem
 from pydrake.common.eigen_geometry import Quaternion
@@ -352,6 +353,7 @@ def main():
     builder.Connect(plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), plant.get_actuation_input_port())
 
+    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
     ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
     diagram = builder.Build()
     diagram_context = diagram.CreateDefaultContext()
