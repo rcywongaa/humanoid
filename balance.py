@@ -199,7 +199,7 @@ class HumanoidController(LeafSystem):
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
                 r_foot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())
 
-        J = J_lfoot + J_rfoot
+        J = np.vstack([J_lfoot, J_rfoot])
         assert(J.shape == (N_c*N_f, TOTAL_DOF))
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
@@ -250,7 +250,7 @@ class HumanoidController(LeafSystem):
         Jd_qd_rfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
                 r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-        Jd_qd = np.vstack([Jd_qd_lfoot, Jd_qd_rfoot]).flatten()
+        Jd_qd = np.concatenate([Jd_qd_lfoot.flatten(), Jd_qd_rfoot.flatten()])
         eq12_lhs = J.dot(q_dd) + Jd_qd
         eq12_rhs = -alpha*J.dot(q_d) + eta
         for i in range(eq12_lhs.shape[0]):
