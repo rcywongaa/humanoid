@@ -318,9 +318,13 @@ class HumanoidController(LeafSystem):
 
         ## Use PD to control z_com
         z_K_p = 0.5
-        z_K_d = 0.2
-        prog.AddConstraint(com_position_dd[2] == -z_K_p*(com_position[2] - z_com) - z_K_d*(com_position_d[2]))
-        # prog.AddConstraint(com_position_dd[2] == -z_K_d*(com_position_d[2]))
+        z_K_d = 0.0
+        z_com_dd_des = -z_K_p*(com[2] - z_com) - z_K_d*(com_d[2])
+        # print(f"z_com_dd_des = {z_com_dd_des}")
+        if z_com_dd_des <= -g:
+            prog.AddConstraint(com_dd[2] == -g)
+        else:
+            prog.AddConstraint(com_dd[2] == z_com_dd_des)
 
         return prog
 
