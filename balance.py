@@ -40,7 +40,7 @@ eta_min = -0.2
 eta_max = 0.2
 
 # Taken from drake/drake-build/install/share/drake/examples/atlas/urdf/atlas_minimal_contact.urdf
-l_foot_contact_points = np.array([
+lfoot_full_contact_points = np.array([
     [-0.0876,0.066,-0.07645], # left heel
     [-0.0876,-0.0626,-0.07645], # right heel
     [0.1728,0.066,-0.07645], # left toe
@@ -51,7 +51,7 @@ l_foot_contact_points = np.array([
     [-0.0008,-0.0626,-0.07645] # right midfoot_rear
 ]).T
 
-r_foot_contact_points = np.array([
+rfoot_full_contact_points = np.array([
     [-0.0876,0.0626,-0.07645], # left heel
     [-0.0876,-0.066,-0.07645], # right heel
     [0.1728,0.0626,-0.07645], # left toe
@@ -61,8 +61,6 @@ r_foot_contact_points = np.array([
     [-0.0008,0.0626,-0.07645], # left midfoot_rear
     [-0.0008,-0.066,-0.07645] # right midfoot_rear
 ]).T
-N_c_foot = l_foot_contact_points.shape[1] # Num contacts per foot
-N_c = 2*N_c_foot # num contact points
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
@@ -137,6 +135,21 @@ class HumanoidController(LeafSystem):
         self.V = V
 
     def create_qp1(self, plant_context):
+        # Determine contact points
+        lfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("l_foot"),
+                lfoot_full_contact_points, self.plant.world_frame())
+        lfoot_contact_points = lfoot_full_contact_points[:, np.where(lfoot_full_contact_pos[2,:] <= 0.0)[0]]
+        rfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("r_foot"),
+                rfoot_full_contact_points, self.plant.world_frame())
+        rfoot_contact_points = rfoot_full_contact_points[:, np.where(rfoot_full_contact_pos[2,:] <= 0.0)[0]]
+        print("lfoot contact z pos: " + str(lfoot_full_contact_pos[2]))
+        print("lfoot # contacts: " + str(lfoot_contact_points.shape[1]))
+        print("rfoot contact z pos: " + str(rfoot_full_contact_pos[2]))
+        print("rfoot # contacts: " + str(rfoot_contact_points.shape[1]))
+        N_c_lfoot = lfoot_contact_points.shape[1] # Num contacts per foot
+        N_c_rfoot = rfoot_contact_points.shape[1] # Num contacts per foot
+        N_c = N_c_lfoot + N_c_rfoot # num contact points
+
         ## Eq(7)
         H = self.plant.CalcMassMatrixViaInverseDynamics(plant_context)
         # Note that CalcGravityGeneralizedForces assumes the form Mv̇ + C(q, v)v = tau_g(q) + tau_app
@@ -146,11 +159,11 @@ class HumanoidController(LeafSystem):
 
         Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+                lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
 
         Phi_rfoot = self.plant.CalcJacobianTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+                rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Phi = np.vstack([Phi_lfoot, Phi_rfoot])
 
         ## Eq(8)
@@ -188,16 +201,16 @@ class HumanoidController(LeafSystem):
         self.lambd = lambd
 
         # Jacobians ignoring the 6DOF floating base
-        J_lfoot = np.zeros((FLOATING_BASE_DOF*N_c_foot, TOTAL_DOF))
-        for i in range(N_c_foot):
-            J_lfoot[FLOATING_BASE_DOF*i:FLOATING_BASE_DOF*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
+        J_lfoot = np.zeros((N_f*N_c_lfoot, TOTAL_DOF))
+        for i in range(N_c_lfoot):
+            J_lfoot[N_f*i:N_f*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                l_foot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())
-        J_rfoot = np.zeros((FLOATING_BASE_DOF*N_c_foot, TOTAL_DOF))
-        for i in range(N_c_foot):
-            J_rfoot[FLOATING_BASE_DOF*i:FLOATING_BASE_DOF*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
+                lfoot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
+        J_rfoot = np.zeros((N_f*N_c_rfoot, TOTAL_DOF))
+        for i in range(N_c_rfoot):
+            J_rfoot[N_f*i:N_f*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                r_foot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())
+                rfoot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
 
         J = np.vstack([J_lfoot, J_rfoot])
         assert(J.shape == (N_c*N_f, TOTAL_DOF))
@@ -246,11 +259,12 @@ class HumanoidController(LeafSystem):
         alpha = 1.0
         Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                l_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+                lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Jd_qd_rfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                r_foot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+                rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Jd_qd = np.concatenate([Jd_qd_lfoot.flatten(), Jd_qd_rfoot.flatten()])
+        assert(Jd_qd.shape == (N_c*3,))
         eq12_lhs = J.dot(q_dd) + Jd_qd
         eq12_rhs = -alpha*J.dot(q_d) + eta
         for i in range(eq12_lhs.shape[0]):
