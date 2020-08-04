@@ -10,7 +10,7 @@
    ```
    ./drake-visualizer
    ```
-1. Run `python3 load_atlas.py`
+1. Run `python3 balance.py`
 
 ## Troubleshooting
 
