@@ -25,8 +25,8 @@ def load_atlas(plant, add_ground=False):
         static_friction = 1.0
         green = np.array([0.5, 1.0, 0.5, 1.0])
 
-        plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
-                "GroundVisuaGeometry", green)
+        # plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
+                # "GroundVisuaGeometry", green)
 
         ground_friction = CoulombFriction(1.0, 1.0)
         plant.RegisterCollisionGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
