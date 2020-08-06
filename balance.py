@@ -359,6 +359,25 @@ class HumanoidController(LeafSystem):
         # print(f"tau = {tau}")
         output.SetFromVector(tau)
 
+    def printCOMs(self, current_plant_context, result):
+        q_dd_sol = result.GetSolution(self.q_dd)
+        q_d = self.plant.GetVelocities(current_plant_context)
+        com = self.plant.CalcCenterOfMassPosition(current_plant_context)
+        com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
+                current_plant_context, JacobianWrtVariable.kV,
+                self.plant.world_frame(), self.plant.world_frame()).dot(q_d)
+        com_dd = (
+                self.plant.CalcBiasCenterOfMassTranslationalAcceleration(
+                    current_plant_context, JacobianWrtVariable.kV,
+                    self.plant.world_frame(), self.plant.world_frame())
+                + self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
+                    current_plant_context, JacobianWrtVariable.kV,
+                    self.plant.world_frame(), self.plant.world_frame())
+                .dot(q_dd_sol))
+        print(f"com = {com}")
+        print(f"com_d = {com_d}")
+        print(f"com_dd = {com_dd}")
+
 def main():
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
