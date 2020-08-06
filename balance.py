@@ -33,6 +33,42 @@ com_state_size = 4
 half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
+
+JointLimit = namedtuple("JointLimit", ["id", "name", "effort", "lower", "upper"])
+
+JOINT_LIMITS = [
+        JointLimit(0, "back_bkx", 300, -0.523599, 0.523599),
+        JointLimit(1, "back_bky", 445, -0.219388, 0.538783),
+        JointLimit(2, "back_bkz", 106, -0.663225, 0.663225),
+        JointLimit(3, "l_arm_elx", 112, 0, 2.35619),
+        JointLimit(4, "l_arm_ely", 63,  0, 3.14159),
+        JointLimit(5, "l_arm_shx", 99, -1.5708, 1.5708),
+        JointLimit(6, "l_arm_shz", 87, -1.5708, 0.785398),
+        JointLimit(7, "l_arm_mwx", 25, -1.7628, 1.7628),
+        JointLimit(8, "l_arm_uwy", 25, -3.011, 3.011),
+        JointLimit(9, "l_arm_lwy", 25, -2.9671, 2.9671),
+        JointLimit(10, "l_leg_akx", 360, -0.8, 0.8),
+        JointLimit(11, "l_leg_aky", 740, -1, 0.7),
+        JointLimit(12, "l_leg_hpx", 530, -0.523599, 0.523599),
+        JointLimit(13, "l_leg_hpy", 840, -1.61234, 0.65764),
+        JointLimit(14, "l_leg_hpz", 275, -0.174358, 0.786794),
+        JointLimit(15, "l_leg_kny", 890, 0,  2.35637),
+        JointLimit(16, "neck_ay", 25, -0.602139, 1.14319),
+        JointLimit(17, "r_arm_elx", 112, -2.35619, 0),
+        JointLimit(18, "r_arm_ely", 63,  0,  3.14159),
+        JointLimit(19, "r_arm_shx", 99, -1.5708, 1.5708),
+        JointLimit(20, "r_arm_shz", 87, -0.785398, 1.5708),
+        JointLimit(21, "r_arm_mwx", 25, -1.7628, 1.7628),
+        JointLimit(22, "r_arm_uwy", 25, -3.011, 3.011),
+        JointLimit(23, "r_arm_lwy", 25, -2.9671, 2.9671),
+        JointLimit(24, "r_leg_akx", 360, -0.8, 0.8),
+        JointLimit(25, "r_leg_aky", 740, -1, 0.7),
+        JointLimit(26, "r_leg_hpx", 530, -0.523599, 0.523599),
+        JointLimit(27, "r_leg_hpy", 840, -1.61234, 0.65764),
+        JointLimit(28, "r_leg_hpz", 275, -0.786794, 0.174358),
+        JointLimit(29, "r_leg_kny", 890, 0, 2.35637)
+]
+
 tau_min = -200.0
 tau_max = 200.0
 mu = 1.0 # Coefficient of friction
@@ -276,8 +312,8 @@ class HumanoidController(LeafSystem):
         self.tau = tau
         eq13_lhs = self.tau(q_dd, lambd)
         for i in range(eq13_lhs.shape[0]):
-            prog.AddConstraint(eq13_lhs[i] >= tau_min)
-            prog.AddConstraint(eq13_lhs[i] <= tau_max)
+            prog.AddConstraint(eq13_lhs[i] >= -TAU_LIMITS[i])
+            prog.AddConstraint(eq13_lhs[i] <= TAU_LIMITS[i])
 
         ## Eq(14)
         for j in range(N_c):
@@ -315,6 +351,14 @@ class HumanoidController(LeafSystem):
                 .dot(q_dd))
         prog.AddConstraint(u[0] == com_dd[0])
         prog.AddConstraint(u[1] == com_dd[1])
+
+        ## Respect joint limits
+        for i in range(NUM_ACTUATED_DOF):
+            joint_pos = q[q_idx_act + i]
+            if joint_pos >= JOINT_LIMITS[i].upper:
+                q_dd[v_idx_act + i] <= 0.0
+            elif joint_pos <= JOINT_LIMITS[i].lower:
+                q_dd[v_idx_act + i] >= 0.0
 
         ## Use PD to control z_com
         z_K_p = 0.5
