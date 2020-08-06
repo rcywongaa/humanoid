@@ -21,6 +21,8 @@ from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, LeafSystem
 from pydrake.common.eigen_geometry import Quaternion
 
+from collections import namedtuple
+
 import time
 import pdb
 
@@ -34,40 +36,40 @@ half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
 
-JointLimit = namedtuple("JointLimit", ["id", "name", "effort", "lower", "upper"])
+JointLimit = namedtuple("JointLimit", ["effort", "lower", "upper"])
 
-JOINT_LIMITS = [
-        JointLimit(0, "back_bkx", 300, -0.523599, 0.523599),
-        JointLimit(1, "back_bky", 445, -0.219388, 0.538783),
-        JointLimit(2, "back_bkz", 106, -0.663225, 0.663225),
-        JointLimit(3, "l_arm_elx", 112, 0, 2.35619),
-        JointLimit(4, "l_arm_ely", 63,  0, 3.14159),
-        JointLimit(5, "l_arm_shx", 99, -1.5708, 1.5708),
-        JointLimit(6, "l_arm_shz", 87, -1.5708, 0.785398),
-        JointLimit(7, "l_arm_mwx", 25, -1.7628, 1.7628),
-        JointLimit(8, "l_arm_uwy", 25, -3.011, 3.011),
-        JointLimit(9, "l_arm_lwy", 25, -2.9671, 2.9671),
-        JointLimit(10, "l_leg_akx", 360, -0.8, 0.8),
-        JointLimit(11, "l_leg_aky", 740, -1, 0.7),
-        JointLimit(12, "l_leg_hpx", 530, -0.523599, 0.523599),
-        JointLimit(13, "l_leg_hpy", 840, -1.61234, 0.65764),
-        JointLimit(14, "l_leg_hpz", 275, -0.174358, 0.786794),
-        JointLimit(15, "l_leg_kny", 890, 0,  2.35637),
-        JointLimit(16, "neck_ay", 25, -0.602139, 1.14319),
-        JointLimit(17, "r_arm_elx", 112, -2.35619, 0),
-        JointLimit(18, "r_arm_ely", 63,  0,  3.14159),
-        JointLimit(19, "r_arm_shx", 99, -1.5708, 1.5708),
-        JointLimit(20, "r_arm_shz", 87, -0.785398, 1.5708),
-        JointLimit(21, "r_arm_mwx", 25, -1.7628, 1.7628),
-        JointLimit(22, "r_arm_uwy", 25, -3.011, 3.011),
-        JointLimit(23, "r_arm_lwy", 25, -2.9671, 2.9671),
-        JointLimit(24, "r_leg_akx", 360, -0.8, 0.8),
-        JointLimit(25, "r_leg_aky", 740, -1, 0.7),
-        JointLimit(26, "r_leg_hpx", 530, -0.523599, 0.523599),
-        JointLimit(27, "r_leg_hpy", 840, -1.61234, 0.65764),
-        JointLimit(28, "r_leg_hpz", 275, -0.786794, 0.174358),
-        JointLimit(29, "r_leg_kny", 890, 0, 2.35637)
-]
+JOINT_LIMITS = {
+        "back_bkx" : JointLimit(300, -0.523599, 0.523599),
+        "back_bky" : JointLimit(445, -0.219388, 0.538783),
+        "back_bkz" : JointLimit(106, -0.663225, 0.663225),
+        "l_arm_elx": JointLimit(112, 0, 2.35619),
+        "l_arm_ely": JointLimit(63,  0, 3.14159),
+        "l_arm_shx": JointLimit(99, -1.5708, 1.5708),
+        "l_arm_shz": JointLimit(87, -1.5708, 0.785398),
+        "l_arm_mwx": JointLimit(25, -1.7628, 1.7628),
+        "l_arm_uwy": JointLimit(25, -3.011, 3.011),
+        "l_arm_lwy": JointLimit(25, -2.9671, 2.9671),
+        "l_leg_akx": JointLimit(360, -0.8, 0.8),
+        "l_leg_aky": JointLimit(740, -1, 0.7),
+        "l_leg_hpx": JointLimit(530, -0.523599, 0.523599),
+        "l_leg_hpy": JointLimit(840, -1.61234, 0.65764),
+        "l_leg_hpz": JointLimit(275, -0.174358, 0.786794),
+        "l_leg_kny": JointLimit(890, 0,  2.35637),
+        "neck_ay"  : JointLimit(25, -0.602139, 1.14319),
+        "r_arm_elx": JointLimit(112, -2.35619, 0),
+        "r_arm_ely": JointLimit(63,  0,  3.14159),
+        "r_arm_shx": JointLimit(99, -1.5708, 1.5708),
+        "r_arm_shz": JointLimit(87, -0.785398, 1.5708),
+        "r_arm_mwx": JointLimit(25, -1.7628, 1.7628),
+        "r_arm_uwy": JointLimit(25, -3.011, 3.011),
+        "r_arm_lwy": JointLimit(25, -2.9671, 2.9671),
+        "r_leg_akx": JointLimit(360, -0.8, 0.8),
+        "r_leg_aky": JointLimit(740, -1, 0.7),
+        "r_leg_hpx": JointLimit(530, -0.523599, 0.523599),
+        "r_leg_hpy": JointLimit(840, -1.61234, 0.65764),
+        "r_leg_hpz": JointLimit(275, -0.786794, 0.174358),
+        "r_leg_kny": JointLimit(890, 0, 2.35637)
+}
 
 tau_min = -200.0
 tau_max = 200.0
@@ -311,9 +313,11 @@ class HumanoidController(LeafSystem):
             return np.linalg.inv(B_a).dot(H_a.dot(q_dd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
         eq13_lhs = self.tau(q_dd, lambd)
-        for i in range(eq13_lhs.shape[0]):
-            prog.AddConstraint(eq13_lhs[i] >= -TAU_LIMITS[i])
-            prog.AddConstraint(eq13_lhs[i] <= TAU_LIMITS[i])
+        for name, limit in JOINT_LIMITS.items():
+            i = self.getActuatorIndex(name)
+            # eq13_lhs is already expressed in actuator space
+            prog.AddConstraint(eq13_lhs[i] >= -limit.effort)
+            prog.AddConstraint(eq13_lhs[i] <= limit.effort)
 
         ## Eq(14)
         for j in range(N_c):
@@ -353,12 +357,18 @@ class HumanoidController(LeafSystem):
         prog.AddConstraint(u[1] == com_dd[1])
 
         ## Respect joint limits
-        for i in range(NUM_ACTUATED_DOF):
-            joint_pos = q[q_idx_act + i]
-            if joint_pos >= JOINT_LIMITS[i].upper:
-                q_dd[v_idx_act + i] <= 0.0
-            elif joint_pos <= JOINT_LIMITS[i].lower:
-                q_dd[v_idx_act + i] >= 0.0
+        for name, limit in JOINT_LIMITS.items():
+            # Get the corresponding joint value
+            joint_pos = self.plant.GetJointByName(name).get_angle(plant_context)
+            # Get the corresponding actuator index
+            act_idx = self.getActuatorIndex(name)
+            # Use the actuator index to find the corresponding generalized coordinate index
+            q_idx = np.where(B_7[:,act_idx] == 1)[0][0]
+
+            if joint_pos >= limit.upper:
+                prog.AddConstraint(q_dd[q_idx] <= 0.0)
+            elif joint_pos <= limit.lower:
+                prog.AddConstraint(q_dd[q_idx] >= 0.0)
 
         ## Use PD to control z_com
         z_K_p = 0.5
@@ -421,6 +431,16 @@ class HumanoidController(LeafSystem):
         print(f"com = {com}")
         print(f"com_d = {com_d}")
         print(f"com_dd = {com_dd}")
+
+    def getActuatorIndex(self, joint_name):
+        return int(self.plant.GetJointActuatorByName(joint_name + "_motor").index())
+
+    def getActuatorIndices(self, joint_names):
+        ret = []
+        for name in joint_names:
+            idx = self.getActuatorIndex(name)
+            ret.append(idx)
+        return ret
 
 def main():
     builder = DiagramBuilder()
