@@ -4,8 +4,12 @@
 # An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion
 # by Scott Kuindersma, Frank Permenter, and Russ Tedrake
 
+# Notes
+# Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
+
 # TODO:
-# Convert plant_context to be dependent on the time varying state via plant output ports
+# Figure out why QP goes for contact forces less than the robot's mass
+# Make sure the zmp position is valid
 # Convert to time-varying y_desired and z_com
 
 from load_atlas import load_atlas, set_atlas_initial_pose
@@ -30,7 +34,7 @@ FLOATING_BASE_DOF = 6
 NUM_ACTUATED_DOF = 30
 TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
 g = 9.81
-z_com = 1.2 # Obtained experimentally
+z_com = 1.200 # COM after 0.05s
 com_state_size = 4
 half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
@@ -73,7 +77,7 @@ JOINT_LIMITS = {
 
 tau_min = -200.0
 tau_max = 200.0
-mu = 1.0 # Coefficient of friction
+mu = 1.0 # Coefficient of friction, same as in load_atlas.py
 eta_min = -0.2
 eta_max = 0.2
 
@@ -333,6 +337,9 @@ class HumanoidController(LeafSystem):
         for i in range(eta.shape[0]):
             prog.AddConstraint(eta[i] >= eta_min)
             prog.AddConstraint(eta[i] <= eta_max)
+
+        ### Below are constraints that aren't explicitly stated in the paper
+        ### but that seemed important
 
         ## Enforce x as com
         com = self.plant.CalcCenterOfMassPosition(plant_context)
