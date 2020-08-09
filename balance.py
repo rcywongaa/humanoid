@@ -265,7 +265,7 @@ class HumanoidController(LeafSystem):
         self.u = u
 
         ## Eq(10)
-        w = 10.0
+        w = 0.1
         epsilon = 1.0e-8
         K_p = 0.8
         K_d = 0.0
@@ -297,7 +297,7 @@ class HumanoidController(LeafSystem):
             prog.AddConstraint(eq11_lhs[i] == eq11_rhs[i])
 
         ## Eq(12)
-        alpha = 1.0
+        alpha = 0.1
         Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
                 lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
