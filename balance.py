@@ -234,8 +234,8 @@ class HumanoidController(LeafSystem):
 
         ## Quadratic Program I
         prog = MathematicalProgram()
-        q_dd = prog.NewContinuousVariables(self.plant.num_velocities(), name="q_dd") # To ignore 6 DOF floating base
-        self.q_dd = q_dd
+        qdd = prog.NewContinuousVariables(self.plant.num_velocities(), name="qdd") # To ignore 6 DOF floating base
+        self.qdd = qdd
         beta = prog.NewContinuousVariables(N_d,N_c, name="beta")
         self.beta = beta
         lambd = prog.NewContinuousVariables(N_f*N_c, name="lambda")
@@ -274,24 +274,24 @@ class HumanoidController(LeafSystem):
         q = self.plant.GetPositions(plant_context)
         # For generalized velocities, first 6 values are 3 rotational velocities + 3 xd, yd, zd
         # Hence this not strictly the derivative of q
-        q_d = self.plant.GetVelocities(plant_context)
+        qd = self.plant.GetVelocities(plant_context)
 
         # Convert q, q_des to generalized velocities form
         q_err = calcPoseError(self.q_des, q)
         ignored_pose_indices = {3, 4} # Ignore x position, y position
         relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
         self.relevant_pose_indices = relevant_pose_indices
-        q_dd_des = K_p*q_err - K_d*q_d
-        self.q_dd_des = q_dd_des
-        q_dd_err = q_dd_des[relevant_pose_indices] - q_dd[relevant_pose_indices]
+        qdd_des = K_p*q_err - K_d*qd
+        self.qdd_des = qdd_des
+        qdd_err = qdd_des[relevant_pose_indices] - qdd[relevant_pose_indices]
         prog.AddCost(
                 self.V(x, u)
-                + w*((q_dd_err).dot(q_dd_err))
+                + w*((qdd_err).dot(qdd_err))
                 + epsilon * np.sum(np.square(beta))
                 + eta.dot(eta))
 
         ## Eq(11)
-        eq11_lhs = H_f.dot(q_dd)+C_f
+        eq11_lhs = H_f.dot(qdd)+C_f
         eq11_rhs = Phi_f_T.dot(lambd)
         for i in range(eq11_lhs.size):
             prog.AddConstraint(eq11_lhs[i] == eq11_rhs[i])
@@ -306,16 +306,16 @@ class HumanoidController(LeafSystem):
                 rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Jd_qd = np.concatenate([Jd_qd_lfoot.flatten(), Jd_qd_rfoot.flatten()])
         assert(Jd_qd.shape == (N_c*3,))
-        eq12_lhs = J.dot(q_dd) + Jd_qd
-        eq12_rhs = -alpha*J.dot(q_d) + eta
+        eq12_lhs = J.dot(qdd) + Jd_qd
+        eq12_rhs = -alpha*J.dot(qd) + eta
         for i in range(eq12_lhs.shape[0]):
             prog.AddConstraint(eq12_lhs[i] == eq12_rhs[i])
 
         ## Eq(13)
-        def tau(q_dd, lambd):
-            return np.linalg.inv(B_a).dot(H_a.dot(q_dd) + C_a - Phi_a_T.dot(lambd))
+        def tau(qdd, lambd):
+            return np.linalg.inv(B_a).dot(H_a.dot(qdd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
-        eq13_lhs = self.tau(q_dd, lambd)
+        eq13_lhs = self.tau(qdd, lambd)
         for name, limit in JOINT_LIMITS.items():
             i = self.getActuatorIndex(name)
             # eq13_lhs is already expressed in actuator space
@@ -344,7 +344,7 @@ class HumanoidController(LeafSystem):
         com = self.plant.CalcCenterOfMassPosition(plant_context)
         com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV,
-                self.plant.world_frame(), self.plant.world_frame()).dot(q_d)
+                self.plant.world_frame(), self.plant.world_frame()).dot(qd)
         prog.AddConstraint(x[0] == com[0])
         prog.AddConstraint(x[1] == com[1])
         prog.AddConstraint(x[2] == com_d[0])
@@ -358,7 +358,7 @@ class HumanoidController(LeafSystem):
                 + self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                     plant_context, JacobianWrtVariable.kV,
                     self.plant.world_frame(), self.plant.world_frame())
-                .dot(q_dd))
+                .dot(qdd))
         prog.AddConstraint(u[0] == com_dd[0])
         prog.AddConstraint(u[1] == com_dd[1])
 
@@ -372,9 +372,9 @@ class HumanoidController(LeafSystem):
             q_idx = np.where(B_7[:,act_idx] == 1)[0][0]
 
             if joint_pos >= limit.upper:
-                prog.AddConstraint(q_dd[q_idx] <= 0.0)
+                prog.AddConstraint(qdd[q_idx] <= 0.0)
             elif joint_pos <= limit.lower:
-                prog.AddConstraint(q_dd[q_idx] >= 0.0)
+                prog.AddConstraint(qdd[q_idx] >= 0.0)
 
         ## Use PD to control z_com
         # z_K_p = 0.5
@@ -406,7 +406,7 @@ class HumanoidController(LeafSystem):
             print(f"FAILED")
             pdb.set_trace()
             exit(-1)
-        q_dd_sol = result.GetSolution(self.q_dd)
+        qdd_sol = result.GetSolution(self.qdd)
         lambd_sol = result.GetSolution(self.lambd)
         x_sol = result.GetSolution(self.x)
         u_sol = result.GetSolution(self.u)
@@ -430,12 +430,12 @@ class HumanoidController(LeafSystem):
         print("========================================")
 
     def printCOMs(self, current_plant_context, result):
-        q_dd_sol = result.GetSolution(self.q_dd)
-        q_d = self.plant.GetVelocities(current_plant_context)
+        qdd_sol = result.GetSolution(self.qdd)
+        qd = self.plant.GetVelocities(current_plant_context)
         com = self.plant.CalcCenterOfMassPosition(current_plant_context)
         com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                 current_plant_context, JacobianWrtVariable.kV,
-                self.plant.world_frame(), self.plant.world_frame()).dot(q_d)
+                self.plant.world_frame(), self.plant.world_frame()).dot(qd)
         com_dd = (
                 self.plant.CalcBiasCenterOfMassTranslationalAcceleration(
                     current_plant_context, JacobianWrtVariable.kV,
@@ -443,7 +443,7 @@ class HumanoidController(LeafSystem):
                 + self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                     current_plant_context, JacobianWrtVariable.kV,
                     self.plant.world_frame(), self.plant.world_frame())
-                .dot(q_dd_sol))
+                .dot(qdd_sol))
         print(f"com = {com}")
         print(f"com_d = {com_d}")
         print(f"com_dd = {com_dd}")
