@@ -31,6 +31,7 @@ import time
 import pdb
 
 FLOATING_BASE_DOF = 6
+FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions
 NUM_ACTUATED_DOF = 30
 TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
 g = 9.81
@@ -106,9 +107,6 @@ rfoot_full_contact_points = np.array([
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
-v_idx_act = 6 # Start index of actuated joints in generalized velocities
-q_idx_act = 7 # Start index of actuated joints in generalized positions
-
 def normalize(q):
     return q / np.linalg.norm(q)
 
@@ -126,7 +124,7 @@ def calcAngularError(q_target, q_source):
 def calcPoseError(target, source):
     assert(target.size == source.size)
     # Make sure pose is expressed in generalized positions (quaternion base)
-    assert(target.size == NUM_ACTUATED_DOF + q_idx_act)
+    assert(target.size == NUM_ACTUATED_DOF + FLOATING_BASE_QUAT_DOF)
 
     correction = np.zeros(target.shape[0]-1)
     correction[0:3] = calcAngularError(target[0:4], source[0:4])
@@ -160,7 +158,7 @@ class HumanoidController(LeafSystem):
         ## Eq(4)
         C_2 = np.hstack([np.identity(2), np.zeros((2,2))]) # C in Eq(2)
         D = -z_com / g * np.identity(zmp_state_size)
-        Q = 0.1 * np.identity(zmp_state_size)
+        Q = 10.0 * np.identity(zmp_state_size)
 
         ## Eq(6)
         # y.T*Q*y
@@ -210,6 +208,7 @@ class HumanoidController(LeafSystem):
 
         ## Eq(8)
         # From np.sort(np.nonzero(B_7)[0]) we know that indices 0-5 are the unactuated 6 DOF floating base and 6-35 are the actuated 30 DOF robot joints
+        v_idx_act = 6 # Start index of actuated joints in generalized velocities
         H_f = H[0:v_idx_act,:]
         H_a = H[v_idx_act:,:]
         C_f = C_7[0:v_idx_act]
@@ -378,14 +377,13 @@ class HumanoidController(LeafSystem):
                 prog.AddConstraint(q_dd[q_idx] >= 0.0)
 
         ## Use PD to control z_com
-        z_K_p = 0.5
-        z_K_d = 0.0
-        z_com_dd_des = -z_K_p*(com[2] - z_com) - z_K_d*(com_d[2])
-        # print(f"z_com_dd_des = {z_com_dd_des}")
-        if z_com_dd_des <= -g:
-            prog.AddConstraint(com_dd[2] == -g)
-        else:
-            prog.AddConstraint(com_dd[2] == z_com_dd_des)
+        # z_K_p = 0.5
+        # z_K_d = 0.0
+        # z_com_dd_des = -z_K_p*(com[2] - z_com) - z_K_d*(com_d[2])
+        # if z_com_dd_des <= -g:
+            # prog.AddConstraint(com_dd[2] == -g)
+        # else:
+            # prog.AddConstraint(com_dd[2] == z_com_dd_des)
 
         return prog
 
@@ -394,7 +392,7 @@ class HumanoidController(LeafSystem):
             self.start_time = context.get_time()
 
         ## FIXME: Start controller only after foot makes contact with ground
-        if context.get_time() - self.start_time < 0.01:
+        if context.get_time() - self.start_time < 0.05:
             output.SetFromVector(np.zeros(30))
             return
 
@@ -404,8 +402,9 @@ class HumanoidController(LeafSystem):
 
         prog = self.create_qp1(current_plant_context)
         result = Solve(prog)
-        print(f"Success: {result.is_success()}, {result.get_optimal_cost()}")
         if not result.is_success():
+            print(f"FAILED")
+            pdb.set_trace()
             exit(-1)
         q_dd_sol = result.GetSolution(self.q_dd)
         lambd_sol = result.GetSolution(self.lambd)
@@ -413,12 +412,22 @@ class HumanoidController(LeafSystem):
         u_sol = result.GetSolution(self.u)
         beta_sol = result.GetSolution(self.beta)
         eta_sol = result.GetSolution(self.eta)
-        # print(f"V(x,y) = {self.V(x_sol, u_sol)}")
-        # print(f"beta = {beta_sol}")
-        # print(f"lambda = {lambd_sol}")
-        tau = self.tau(q_dd_sol, lambd_sol)
-        # print(f"tau = {tau}")
+
+        print(f"beta = {beta_sol}")
+        # print(f"lambda z = {lambd_sol[2::3]}")
+        print(f"Total force z = {np.sum(lambd_sol[2::3])}")
+
+        tau = self.tau(qdd_sol, lambd_sol)
+        interested_joints = [
+                "back_bky",
+                "l_leg_hpy",
+                "r_leg_hpy"
+        ]
+        print(f"tau = {tau[self.getActuatorIndices(interested_joints)]}")
+        print(f"joint angles = {self.getJointValues(interested_joints, current_plant_context)}")
+
         output.SetFromVector(tau)
+        print("========================================")
 
     def printCOMs(self, current_plant_context, result):
         q_dd_sol = result.GetSolution(self.q_dd)
@@ -449,6 +458,19 @@ class HumanoidController(LeafSystem):
             ret.append(idx)
         return ret
 
+    def getJointValues(self, joint_names, context):
+        ret = []
+        for name in joint_names:
+            ret.append(self.plant.GetJointByName(name).get_angle(context))
+        return ret
+
+    def getOrderedJointLimits(self):
+        ret = [None] * len(JOINT_LIMITS)
+        for name, limit in JOINT_LIMITS.items():
+            i = self.getActuatorIndex(name)
+            ret[i] = limit
+        return ret
+
 def main():
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
@@ -469,7 +491,7 @@ def main():
     set_atlas_initial_pose(plant, plant_context)
 
     simulator = Simulator(diagram, diagram_context)
-    simulator.set_target_realtime_rate(0.5)
+    simulator.set_target_realtime_rate(0.1)
     simulator.AdvanceTo(5.0)
 
 if __name__ == "__main__":
