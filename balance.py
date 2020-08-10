@@ -144,6 +144,7 @@ class HumanoidController(LeafSystem):
 
         # Assume y_desired is fixed for now
         # self.input_y_desired_idx = self.DeclareVectorInputPort("y_des", BasicVector(zmp_state_size)).get_index()
+        y_des = np.array([0.1, 0.0])
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.GetPositions(self.upright_context).size + self.plant.GetVelocities(self.upright_context).size)).get_index()
         self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
@@ -178,8 +179,10 @@ class HumanoidController(LeafSystem):
             y = C_2.dot(x) + D.dot(u)
             def dJ_dx(x):
                 return x.T.dot(S.T+S) # https://math.stackexchange.com/questions/20694/vector-derivative-w-r-t-its-transpose-fracdaxdxt
-            x_d = A.dot(x) + B_1.dot(u)
-            return y.T.dot(Q).dot(y) + dJ_dx(x).dot(x_d)
+            y_bar = y - y_des
+            x_bar = x - np.hstack([y_des, [0.0, 0.0]])
+            xd_bar = A.dot(x_bar) + B_1.dot(u)
+            return y_bar.T.dot(Q).dot(y_bar) + dJ_dx(x_bar).dot(xd_bar)
         self.V = V
 
     def create_qp1(self, plant_context):
@@ -285,10 +288,10 @@ class HumanoidController(LeafSystem):
         self.u = u
 
         ## Eq(10)
-        w = 1.0
+        w = 0.01
         epsilon = 1.0e-8
-        K_p = 100.0
-        K_d = 8.0
+        K_p = 10.0
+        K_d = 2.0
         frame_weights = np.ones((TOTAL_DOF))
         # Weigh pelvis frame rotation and z position higher
         # frame_weights[0] = 10.0
@@ -304,7 +307,8 @@ class HumanoidController(LeafSystem):
 
         # Convert q, q_des to generalized velocities form
         q_err = calcPoseError(self.q_des, q)
-        ignored_pose_indices = {3, 4} # Ignore x position, y position
+        # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
+        ignored_pose_indices = {} # Ignore x position, y position
         relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
         self.relevant_pose_indices = relevant_pose_indices
         qdd_des = K_p*q_err - K_d*qd
@@ -425,9 +429,6 @@ class HumanoidController(LeafSystem):
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
-        print(f"pelvis position = {Quaternion(normalize(q_v[0:4])).xyz()}")
-        print(f"pelvis velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3]}")
-
         prog = self.create_qp1(current_plant_context)
         result = Solve(prog)
         if not result.is_success():
@@ -446,7 +447,12 @@ class HumanoidController(LeafSystem):
 
         # print(f"comdd z: {comdd[2]}")
         # self.plant.EvalBodyPoseInWorld(current_plant_context, self.plant.GetBodyByName("pelvis")).rotation().ToQuaternion().xyz()
-        print(f"pelvis acceleration = {qdd_sol[0:3]}")
+        print(f"pelvis angular position = {Quaternion(normalize(q_v[0:4])).xyz()}")
+        print(f"pelvis angular velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3]}")
+        print(f"pelvis angular acceleration = {qdd_sol[0:3]}")
+        print(f"pelvis translational position = {q_v[4:7]}")
+        print(f"pelvis translational velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3 : FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 6]}")
+        print(f"pelvis translational acceleration = {qdd_sol[3:6]}")
         # print(f"beta = {beta_sol}")
         # print(f"lambda z = {lambd_sol[2::3]}")
         print(f"Total force z = {np.sum(lambd_sol[2::3])}")
