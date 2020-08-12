@@ -293,11 +293,6 @@ class HumanoidController(LeafSystem):
         K_p = 10.0
         K_d = 2.0
         frame_weights = np.ones((TOTAL_DOF))
-        # Weigh pelvis frame rotation and z position higher
-        # frame_weights[0] = 10.0
-        # frame_weights[1] = 10.0
-        # frame_weights[2] = 10.0
-        # frame_weights[5] = 10.0
 
         # For generalized positions, first 7 values are 4 quaternion + 3 x,y,z
         q = self.plant.GetPositions(plant_context)
@@ -307,6 +302,7 @@ class HumanoidController(LeafSystem):
 
         # Convert q, q_des to generalized velocities form
         q_err = calcPoseError(self.q_des, q)
+        ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
         ignored_pose_indices = {} # Ignore x position, y position
         relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
