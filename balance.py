@@ -313,13 +313,13 @@ class HumanoidController(LeafSystem):
                 + epsilon * np.sum(np.square(beta))
                 + eta.dot(eta))
 
-        ## Eq(11)
+        ## Eq(11) - 0.004s
         eq11_lhs = H_f.dot(qdd)+C_f
         eq11_rhs = Phi_f_T.dot(lambd)
         for i in range(eq11_lhs.size):
-            prog.AddConstraint(eq11_lhs[i] == eq11_rhs[i])
+            prog.AddLinearConstraint(eq11_lhs[i] == eq11_rhs[i])
 
-        ## Eq(12)
+        ## Eq(12) - 0.006s
         alpha = 0.1
         Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
@@ -332,9 +332,9 @@ class HumanoidController(LeafSystem):
         eq12_lhs = J.dot(qdd) + Jd_qd
         eq12_rhs = -alpha*J.dot(qd) + eta
         for i in range(eq12_lhs.shape[0]):
-            prog.AddConstraint(eq12_lhs[i] == eq12_rhs[i])
+            prog.AddLinearConstraint(eq12_lhs[i] == eq12_rhs[i])
 
-        ## Eq(13)
+        ## Eq(13) - 0.02s
         def tau(qdd, lambd):
             return self.B_a_inv.dot(H_a.dot(qdd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
@@ -342,23 +342,23 @@ class HumanoidController(LeafSystem):
         for name, limit in JOINT_LIMITS.items():
             i = self.getActuatorIndex(name)
             # eq13_lhs is already expressed in actuator space
-            prog.AddConstraint(eq13_lhs[i] >= -limit.effort)
-            prog.AddConstraint(eq13_lhs[i] <= limit.effort)
+            prog.AddLinearConstraint(eq13_lhs[i] >= -limit.effort)
+            prog.AddLinearConstraint(eq13_lhs[i] <= limit.effort)
 
         ## Eq(14)
         for j in range(N_c):
             beta_v = beta[:,j].dot(v[:,j])
             for k in range(N_f):
-                prog.AddConstraint(lambd[N_f*j+k] == beta_v[k])
+                prog.AddLinearConstraint(lambd[N_f*j+k] == beta_v[k])
 
         ## Eq(15)
         for b in beta.flat:
-            prog.AddConstraint(b >= 0.0)
+            prog.AddLinearConstraint(b >= 0.0)
 
         ## Eq(16)
         for i in range(eta.shape[0]):
-            prog.AddConstraint(eta[i] >= eta_min)
-            prog.AddConstraint(eta[i] <= eta_max)
+            prog.AddLinearConstraint(eta[i] >= eta_min)
+            prog.AddLinearConstraint(eta[i] <= eta_max)
 
         ### Below are constraints that aren't explicitly stated in the paper
         ### but that seemed important
@@ -368,10 +368,10 @@ class HumanoidController(LeafSystem):
         com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV,
                 self.plant.world_frame(), self.plant.world_frame()).dot(qd)
-        prog.AddConstraint(x[0] == com[0])
-        prog.AddConstraint(x[1] == com[1])
-        prog.AddConstraint(x[2] == com_d[0])
-        prog.AddConstraint(x[3] == com_d[1])
+        prog.AddLinearConstraint(x[0] == com[0])
+        prog.AddLinearConstraint(x[1] == com[1])
+        prog.AddLinearConstraint(x[2] == com_d[0])
+        prog.AddLinearConstraint(x[3] == com_d[1])
 
         ## Enforce u as com_dd
         com_dd = (
@@ -382,8 +382,8 @@ class HumanoidController(LeafSystem):
                     plant_context, JacobianWrtVariable.kV,
                     self.plant.world_frame(), self.plant.world_frame())
                 .dot(qdd))
-        prog.AddConstraint(u[0] == com_dd[0])
-        prog.AddConstraint(u[1] == com_dd[1])
+        prog.AddLinearConstraint(u[0] == com_dd[0])
+        prog.AddLinearConstraint(u[1] == com_dd[1])
 
         ## Respect joint limits
         for name, limit in JOINT_LIMITS.items():
@@ -396,10 +396,10 @@ class HumanoidController(LeafSystem):
 
             if joint_pos >= limit.upper:
                 # print(f"Joint {name} max reached")
-                prog.AddConstraint(qdd[q_idx] <= 0.0)
+                prog.AddLinearConstraint(qdd[q_idx] <= 0.0)
             elif joint_pos <= limit.lower:
                 # print(f"Joint {name} min reached")
-                prog.AddConstraint(qdd[q_idx] >= 0.0)
+                prog.AddLinearConstraint(qdd[q_idx] >= 0.0)
 
         return prog
 
