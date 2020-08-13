@@ -129,8 +129,11 @@ def calcPoseError(target, source):
     return error
 
 class HumanoidController(LeafSystem):
-    # is_wbc toggles between COM/COP stabilization and whole body stabilization
-    # by changing the formulation of V
+    '''
+    is_wbc : bool
+        toggles between COM/COP stabilization and whole body stabilization
+        by changing the formulation of V
+    '''
     def __init__(self, is_wbc=False):
         self.is_wbc = is_wbc
         self.start_time = None
@@ -141,22 +144,38 @@ class HumanoidController(LeafSystem):
         set_atlas_initial_pose(self.plant, self.upright_context)
         self.q_des = self.plant.GetPositions(self.upright_context)
 
-        # Assume y_desired is fixed for now
-        self.input_y_des_idx = self.DeclareVectorInputPort("y_des", BasicVector(zmp_state_size)).get_index()
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.GetPositions(self.upright_context).size + self.plant.GetVelocities(self.upright_context).size)).get_index()
         self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
 
-        # Note this is defined differently when the whole body plan is available
         if is_wbc:
+            com_dim = 3
+            self.x_size = 2*com_dim
+            self.u_size = com_dim
+            self.input_r_idx = self.DeclareVectorInputPort("r", BasicVector(com_dim)).get_index()
+            self.input_rd_idx = self.DeclareVectorInputPort("rd", BasicVector(com_dim)).get_index()
+            self.input_rdd_idx = self.DeclareVectorInputPort("rdd", BasicVector(com_dim)).get_index()
             # Use formulation in Section 4.3 of
             # Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
             # by Scott Kuindersma, Robin Deits, Maurice Fallon, Andrés Valenzuela, Hongkai Dai, Frank Permenter, Twan Koolen, Pat Marion, Russ Tedrake
 
-            Q = 1.0 * np.identity(com_state_size)
-            R = 0.1 * np.identity(half_com_state_size)
-            def V(x, u):
-                pass
+            Q = 1.0 * np.identity(self.x_size)
+            R = 0.1 * np.identity(self.u_size)
+            A = np.vstack([
+                np.hstack([0*np.identity(com_dim), 1*np.identity(com_dim)]),
+                np.hstack([0*np.identity(com_dim), 0*np.identity(com_dim)])])
+            B_1 = np.vstack([
+                0*np.identity(com_dim),
+                1*np.identity(com_dim)])
+            K, S = LinearQuadraticRegulator(A, B_1, Q, R)
+            def V_full(x, u, r, rd, rdd):
+                x_bar = x - np.vstack([r, rd])
+                u_bar = u - rdd
+                # xd_bar = d(x - [r, rd].T)/dt
+                #         = xd - [rd, rdd].T
+                #         = Ax + Bu - [rd, rdd].T
+                xd_bar = A.dot(x) + B.dot(u) - np.concatenate([rd, rdd])
+                return x_bar.T.dot(Q).dot(x_bar) + u_bar.T.dot(R).dot(u_bar) + 2*x_bar.T.dot(S).dot(xd_bar)
 
         else:
             # Only x, y coordinates of COM is considered
@@ -418,10 +437,13 @@ class HumanoidController(LeafSystem):
             return
 
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
-        y_des = self.EvalVectorInput(context, self.input_y_des_idx).get_value()
         if self.is_wbc:
-            pass
+            r = self.EvalVectorInput(context, self.input_r_idx).get_value()
+            rd = self.EvalVectorInput(context, self.input_rd_idx).get_value()
+            rdd = self.EvalVectorInput(context, self.input_rdd_idx).get_value()
+            V = lambda x, u : self.V_full(x, u, r, rd, rdd)
         else:
+            y_des = self.EvalVectorInput(context, self.input_y_des_idx).get_value()
             V = lambda x, u : self.V_full(x, u, y_des)
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
