@@ -131,7 +131,10 @@ def calcPoseError(target, source):
     return error
 
 class HumanoidController(LeafSystem):
-    def __init__(self):
+    # is_wbc toggles between COM/COP stabilization and whole body stabilization
+    # by changing the formulation of V
+    def __init__(self, is_wbc=False):
+        self.is_wbc = is_wbc
         self.start_time = None
         LeafSystem.__init__(self)
         self.plant = MultibodyPlant(mbp_time_step)
@@ -141,51 +144,52 @@ class HumanoidController(LeafSystem):
         self.q_des = self.plant.GetPositions(self.upright_context)
 
         # Assume y_desired is fixed for now
-        # self.input_y_desired_idx = self.DeclareVectorInputPort("y_des", BasicVector(zmp_state_size)).get_index()
-        y_des = np.array([0.1, 0.0])
+        self.input_y_des_idx = self.DeclareVectorInputPort("y_des", BasicVector(zmp_state_size)).get_index()
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.GetPositions(self.upright_context).size + self.plant.GetVelocities(self.upright_context).size)).get_index()
         self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
 
-        ## Eq(1)
-        A = np.vstack([
-            np.hstack([0*np.identity(half_com_state_size), 1*np.identity(half_com_state_size)]),
-            np.hstack([0*np.identity(half_com_state_size), 0*np.identity(half_com_state_size)])])
-        self.A = A
-        B_1 = np.vstack([
-            0*np.identity(half_com_state_size),
-            1*np.identity(half_com_state_size)])
-        self.B_1 = B_1
-
-        ## Eq(4)
-        C_2 = np.hstack([np.identity(2), np.zeros((2,2))]) # C in Eq(2)
-        self.C_2 = C_2
-        D = -z_com / g * np.identity(zmp_state_size)
-        self.D = D
-        Q = 1.0 * np.identity(zmp_state_size)
-        self.Q = Q
-
-        ## Eq(6)
-        # y.T*Q*y
-        # = (C*x+D*u)*Q*(C*x+D*u).T
-        # = x.T*C.T*Q*C*x + u.T*D.T*Q*D*u + x.T*C.T*Q*D*u + u.T*D.T*Q*C*X
-        # = ..                            + 2*x.T*C.T*Q*D*u
-        K, S = LinearQuadraticRegulator(A, B_1, C_2.T.dot(Q).dot(C_2), D.T.dot(Q).dot(D), C_2.T.dot(Q).dot(D))
-        self.K = K
-        self.S = S
         # Note this is defined differently when the whole body plan is available
-        # Refer to Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
-        # by Scott Kuindersma · Robin Deits · Maurice Fallon · Andrés Valenzuela · Hongkai Dai · Frank Permenter · Twan Koolen · Pat Marion · Russ Tedrake
-        # Section 4.3
-        def V(x, u): # Assume constant z_com, we don't need tvLQR
-            y = C_2.dot(x) + D.dot(u)
-            def dJ_dx(x):
-                return x.T.dot(S.T+S) # https://math.stackexchange.com/questions/20694/vector-derivative-w-r-t-its-transpose-fracdaxdxt
-            y_bar = y - y_des
-            x_bar = x - np.hstack([y_des, [0.0, 0.0]])
-            xd_bar = A.dot(x_bar) + B_1.dot(u)
-            return y_bar.T.dot(Q).dot(y_bar) + dJ_dx(x_bar).dot(xd_bar)
-        self.V = V
+        if is_wbc:
+            # Use formulation in Section 4.3 of
+            # Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
+            # by Scott Kuindersma, Robin Deits, Maurice Fallon, Andrés Valenzuela, Hongkai Dai, Frank Permenter, Twan Koolen, Pat Marion, Russ Tedrake
+
+            Q = 1.0 * np.identity(com_state_size)
+            R = 0.1 * np.identity(half_com_state_size)
+            def V(x, u):
+                pass
+
+        else:
+            ## Eq(1)
+            A = np.vstack([
+                np.hstack([0*np.identity(half_com_state_size), 1*np.identity(half_com_state_size)]),
+                np.hstack([0*np.identity(half_com_state_size), 0*np.identity(half_com_state_size)])])
+            B_1 = np.vstack([
+                0*np.identity(half_com_state_size),
+                1*np.identity(half_com_state_size)])
+
+            ## Eq(4)
+            C_2 = np.hstack([np.identity(2), np.zeros((2,2))]) # C in Eq(2)
+            D = -z_com / g * np.identity(zmp_state_size)
+            Q = 1.0 * np.identity(zmp_state_size)
+
+            ## Eq(6)
+            # y.T*Q*y
+            # = (C*x+D*u)*Q*(C*x+D*u).T
+            # = x.T*C.T*Q*C*x + u.T*D.T*Q*D*u + x.T*C.T*Q*D*u + u.T*D.T*Q*C*X
+            # = ..                            + 2*x.T*C.T*Q*D*u
+            K, S = LinearQuadraticRegulator(A, B_1, C_2.T.dot(Q).dot(C_2), D.T.dot(Q).dot(D), C_2.T.dot(Q).dot(D))
+            # Use original formulation
+            def V_full(x, u, y_des): # Assume constant z_com, we don't need tvLQR
+                y = C_2.dot(x) + D.dot(u)
+                def dJ_dx(x):
+                    return x.T.dot(S.T+S) # https://math.stackexchange.com/questions/20694/vector-derivative-w-r-t-its-transpose-fracdaxdxt
+                y_bar = y - y_des
+                x_bar = x - np.hstack([y_des, [0.0, 0.0]])
+                xd_bar = A.dot(x_bar) + B_1.dot(u)
+                return y_bar.T.dot(Q).dot(y_bar) + dJ_dx(x_bar).dot(xd_bar)
+            self.V_full = V_full
 
         # Calculate values that don't depend on context
         self.B_7 = self.plant.MakeActuationMatrix()
@@ -197,7 +201,7 @@ class HumanoidController(LeafSystem):
         # Sort joint effort limits to be the same order as tau in Eq(13)
         self.sorted_max_efforts = np.array([entry[1].effort for entry in sorted(JOINT_LIMITS.items(), key=lambda entry : self.getActuatorIndex(entry[0]))])
 
-    def create_qp1(self, plant_context):
+    def create_qp1(self, plant_context, V):
         # Determine contact points
         lfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("l_foot"),
                 lfoot_full_contact_points, self.plant.world_frame())
@@ -312,7 +316,7 @@ class HumanoidController(LeafSystem):
         qdd_err = qdd_err*frame_weights
         qdd_err = qdd_err[relevant_pose_indices]
         prog.AddCost(
-                self.V(x, u)
+                V(x, u)
                 + w*((qdd_err).dot(qdd_err))
                 + epsilon * np.sum(np.square(beta))
                 + eta.dot(eta))
@@ -411,10 +415,15 @@ class HumanoidController(LeafSystem):
             return
 
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
+        y_des = self.EvalVectorInput(context, self.input_y_des_idx).get_value()
+        if self.is_wbc:
+            pass
+        else:
+            V = lambda x, u : self.V_full(x, u, y_des)
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
         start_formulate_time = time.time()
-        prog = self.create_qp1(current_plant_context)
+        prog = self.create_qp1(current_plant_context, V)
         print(f"Formulate time: {time.time() - start_formulate_time}s")
         start_solve_time = time.time()
         result = Solve(prog)
@@ -515,6 +524,8 @@ def main():
     diagram_context = diagram.CreateDefaultContext()
     plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
     set_atlas_initial_pose(plant, plant_context)
+    controller_context = diagram.GetMutableSubsystemContext(controller, diagram_context)
+    controller.GetInputPort("y_des").FixValue(controller_context, np.array([0.1, 0.0]))
 
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.1)
