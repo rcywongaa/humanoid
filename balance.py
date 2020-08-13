@@ -209,6 +209,7 @@ class HumanoidController(LeafSystem):
                     return x.T.dot(S.T+S) # https://math.stackexchange.com/questions/20694/vector-derivative-w-r-t-its-transpose-fracdaxdxt
                 y_bar = y - y_des
                 x_bar = x - np.concatenate([y_des, [0.0, 0.0]])
+                # FIXME: xd_bar should depend on yd_des
                 xd_bar = A.dot(x_bar) + B_1.dot(u)
                 return y_bar.T.dot(Q).dot(y_bar) + dJ_dx(x_bar).dot(xd_bar)
             self.V_full = V_full
