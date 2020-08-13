@@ -35,8 +35,6 @@ NUM_ACTUATED_DOF = 30
 TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
 g = 9.81
 z_com = 1.220 # COM after 0.05s
-com_state_size = 4
-half_com_state_size = int(com_state_size/2.0)
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
 
@@ -161,13 +159,18 @@ class HumanoidController(LeafSystem):
                 pass
 
         else:
+            # Only x, y coordinates of COM is considered
+            com_dim = 2
+            self.x_size = 2*com_dim
+            self.u_size = com_dim
+            self.input_y_des_idx = self.DeclareVectorInputPort("y_des", BasicVector(zmp_state_size)).get_index()
             ## Eq(1)
             A = np.vstack([
-                np.hstack([0*np.identity(half_com_state_size), 1*np.identity(half_com_state_size)]),
-                np.hstack([0*np.identity(half_com_state_size), 0*np.identity(half_com_state_size)])])
+                np.hstack([0*np.identity(com_dim), 1*np.identity(com_dim)]),
+                np.hstack([0*np.identity(com_dim), 0*np.identity(com_dim)])])
             B_1 = np.vstack([
-                0*np.identity(half_com_state_size),
-                1*np.identity(half_com_state_size)])
+                0*np.identity(com_dim),
+                1*np.identity(com_dim)])
 
             ## Eq(4)
             C_2 = np.hstack([np.identity(2), np.zeros((2,2))]) # C in Eq(2)
@@ -285,9 +288,9 @@ class HumanoidController(LeafSystem):
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
         self.eta = eta
 
-        x = prog.NewContinuousVariables(com_state_size, name="x") # x_com, y_com, x_com_d, y_com_d
+        x = prog.NewContinuousVariables(self.x_size, name="x") # x_com, y_com, x_com_d, y_com_d
         self.x = x
-        u = prog.NewContinuousVariables(half_com_state_size, name="u") # x_com_dd, y_com_dd
+        u = prog.NewContinuousVariables(self.u_size, name="u") # x_com_dd, y_com_dd
         self.u = u
 
         ## Eq(10)
