@@ -182,6 +182,13 @@ class HumanoidController(LeafSystem):
             return y_bar.T.dot(Q).dot(y_bar) + dJ_dx(x_bar).dot(xd_bar)
         self.V = V
 
+        # Calculate values that don't depend on context
+        self.B_7 = self.plant.MakeActuationMatrix()
+        # From np.sort(np.nonzero(B_7)[0]) we know that indices 0-5 are the unactuated 6 DOF floating base and 6-35 are the actuated 30 DOF robot joints
+        self.v_idx_act = 6 # Start index of actuated joints in generalized velocities
+        self.B_a = self.B_7[self.v_idx_act:,:]
+        self.B_a_inv = np.linalg.inv(self.B_a)
+
     def create_qp1(self, plant_context):
         # Determine contact points
         lfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("l_foot"),
@@ -200,13 +207,10 @@ class HumanoidController(LeafSystem):
 
         ## Eq(7)
         H = self.plant.CalcMassMatrixViaInverseDynamics(plant_context)
-        self.H = H
         # Note that CalcGravityGeneralizedForces assumes the form Mv̇ + C(q, v)v = tau_g(q) + tau_app
         # while Eq(7) assumes gravity is accounted in C (on the left hand side)
         C_7 = self.plant.CalcBiasTerm(plant_context) - self.plant.CalcGravityGeneralizedForces(plant_context)
-        self.C_7 = C_7
-        B_7 = self.plant.MakeActuationMatrix()
-        self.B_7 = B_7
+        B_7 = self.B_7
 
         Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
@@ -216,25 +220,16 @@ class HumanoidController(LeafSystem):
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
                 rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Phi = np.vstack([Phi_lfoot, Phi_rfoot])
-        self.Phi = Phi
 
         ## Eq(8)
-        # From np.sort(np.nonzero(B_7)[0]) we know that indices 0-5 are the unactuated 6 DOF floating base and 6-35 are the actuated 30 DOF robot joints
-        v_idx_act = 6 # Start index of actuated joints in generalized velocities
+        v_idx_act = self.v_idx_act
         H_f = H[0:v_idx_act,:]
-        self.H_f = H_f
         H_a = H[v_idx_act:,:]
-        self.H_a = H_a
         C_f = C_7[0:v_idx_act]
-        self.C_f = C_f
         C_a = C_7[v_idx_act:]
-        self.C_a = C_a
-        B_a = B_7[v_idx_act:,:]
-        self.B_a = B_a
+        B_a = self.B_a
         Phi_f_T = Phi.T[0:v_idx_act:,:]
-        self.Phi_f_T = Phi_f_T
         Phi_a_T = Phi.T[v_idx_act:,:]
-        self.Phi_a_T = Phi_a_T
 
         ## Eq(9)
         # Assume flat ground for now
@@ -273,7 +268,6 @@ class HumanoidController(LeafSystem):
                 rfoot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
 
         J = np.vstack([J_lfoot, J_rfoot])
-        self.J = J
         assert(J.shape == (N_c*N_f, TOTAL_DOF))
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
@@ -306,7 +300,6 @@ class HumanoidController(LeafSystem):
         relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
         self.relevant_pose_indices = relevant_pose_indices
         qdd_des = -K_p*q_err - K_d*qd
-        self.qdd_des = qdd_des
         qdd_err = qdd_des - qdd
         qdd_err = qdd_err*frame_weights
         qdd_err = qdd_err[relevant_pose_indices]
@@ -318,9 +311,7 @@ class HumanoidController(LeafSystem):
 
         ## Eq(11)
         eq11_lhs = H_f.dot(qdd)+C_f
-        self.eq11_lhs = eq11_lhs
         eq11_rhs = Phi_f_T.dot(lambd)
-        self.eq11_rhs = eq11_rhs
         for i in range(eq11_lhs.size):
             prog.AddConstraint(eq11_lhs[i] == eq11_rhs[i])
 
@@ -335,18 +326,15 @@ class HumanoidController(LeafSystem):
         Jd_qd = np.concatenate([Jd_qd_lfoot.flatten(), Jd_qd_rfoot.flatten()])
         assert(Jd_qd.shape == (N_c*3,))
         eq12_lhs = J.dot(qdd) + Jd_qd
-        self.eq12_lhs = eq12_lhs
         eq12_rhs = -alpha*J.dot(qd) + eta
-        self.eq12_rhs = eq12_rhs
         for i in range(eq12_lhs.shape[0]):
             prog.AddConstraint(eq12_lhs[i] == eq12_rhs[i])
 
         ## Eq(13)
         def tau(qdd, lambd):
-            return np.linalg.inv(B_a).dot(H_a.dot(qdd) + C_a - Phi_a_T.dot(lambd))
+            return self.B_a_inv.dot(H_a.dot(qdd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
         eq13_lhs = self.tau(qdd, lambd)
-        self.eq13_lhs = eq13_lhs
         for name, limit in JOINT_LIMITS.items():
             i = self.getActuatorIndex(name)
             # eq13_lhs is already expressed in actuator space
@@ -423,8 +411,12 @@ class HumanoidController(LeafSystem):
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
+        start_formulate_time = time.time()
         prog = self.create_qp1(current_plant_context)
+        print(f"Formulate time: {time.time() - start_formulate_time}s")
+        start_solve_time = time.time()
         result = Solve(prog)
+        print(f"Solve time: {time.time() - start_solve_time}s")
         if not result.is_success():
             print(f"FAILED")
             pdb.set_trace()
