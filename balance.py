@@ -22,6 +22,7 @@ from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, LeafSystem
 from pydrake.common.eigen_geometry import Quaternion
+from pydrake.all import eq, le, ge
 
 from collections import namedtuple
 
@@ -193,6 +194,9 @@ class HumanoidController(LeafSystem):
         self.B_a = self.B_7[self.v_idx_act:,:]
         self.B_a_inv = np.linalg.inv(self.B_a)
 
+        # Sort joint effort limits to be the same order as tau in Eq(13)
+        self.sorted_max_efforts = np.array([entry[1].effort for entry in sorted(JOINT_LIMITS.items(), key=lambda entry : self.getActuatorIndex(entry[0]))])
+
     def create_qp1(self, plant_context):
         # Determine contact points
         lfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("l_foot"),
@@ -313,13 +317,12 @@ class HumanoidController(LeafSystem):
                 + epsilon * np.sum(np.square(beta))
                 + eta.dot(eta))
 
-        ## Eq(11) - 0.004s
+        ## Eq(11) - 0.003s
         eq11_lhs = H_f.dot(qdd)+C_f
         eq11_rhs = Phi_f_T.dot(lambd)
-        for i in range(eq11_lhs.size):
-            prog.AddLinearConstraint(eq11_lhs[i] == eq11_rhs[i])
+        prog.AddLinearConstraint(eq(eq11_lhs, eq11_rhs))
 
-        ## Eq(12) - 0.006s
+        ## Eq(12) - 0.005s
         alpha = 0.1
         Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
@@ -331,19 +334,15 @@ class HumanoidController(LeafSystem):
         assert(Jd_qd.shape == (N_c*3,))
         eq12_lhs = J.dot(qdd) + Jd_qd
         eq12_rhs = -alpha*J.dot(qd) + eta
-        for i in range(eq12_lhs.shape[0]):
-            prog.AddLinearConstraint(eq12_lhs[i] == eq12_rhs[i])
+        prog.AddLinearConstraint(eq(eq12_lhs, eq12_rhs))
 
-        ## Eq(13) - 0.02s
+        ## Eq(13) - 0.015s
         def tau(qdd, lambd):
             return self.B_a_inv.dot(H_a.dot(qdd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
         eq13_lhs = self.tau(qdd, lambd)
-        for name, limit in JOINT_LIMITS.items():
-            i = self.getActuatorIndex(name)
-            # eq13_lhs is already expressed in actuator space
-            prog.AddLinearConstraint(eq13_lhs[i] >= -limit.effort)
-            prog.AddLinearConstraint(eq13_lhs[i] <= limit.effort)
+        prog.AddLinearConstraint(ge(eq13_lhs, -self.sorted_max_efforts))
+        prog.AddLinearConstraint(le(eq13_lhs, self.sorted_max_efforts))
 
         ## Eq(14)
         for j in range(N_c):
@@ -356,9 +355,8 @@ class HumanoidController(LeafSystem):
             prog.AddLinearConstraint(b >= 0.0)
 
         ## Eq(16)
-        for i in range(eta.shape[0]):
-            prog.AddLinearConstraint(eta[i] >= eta_min)
-            prog.AddLinearConstraint(eta[i] <= eta_max)
+        prog.AddLinearConstraint(ge(eta, eta_min))
+        prog.AddLinearConstraint(le(eta, eta_max))
 
         ### Below are constraints that aren't explicitly stated in the paper
         ### but that seemed important
