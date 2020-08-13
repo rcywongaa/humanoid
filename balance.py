@@ -8,8 +8,6 @@
 # Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
 
 # TODO:
-# Figure out why QP goes for contact forces less than the robot's mass
-# Make sure the zmp position is valid
 # Convert to time-varying y_desired and z_com
 
 from load_atlas import load_atlas, set_atlas_initial_pose
