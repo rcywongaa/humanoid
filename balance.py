@@ -208,7 +208,7 @@ class HumanoidController(LeafSystem):
                 def dJ_dx(x):
                     return x.T.dot(S.T+S) # https://math.stackexchange.com/questions/20694/vector-derivative-w-r-t-its-transpose-fracdaxdxt
                 y_bar = y - y_des
-                x_bar = x - np.hstack([y_des, [0.0, 0.0]])
+                x_bar = x - np.concatenate([y_des, [0.0, 0.0]])
                 xd_bar = A.dot(x_bar) + B_1.dot(u)
                 return y_bar.T.dot(Q).dot(y_bar) + dJ_dx(x_bar).dot(xd_bar)
             self.V_full = V_full
