@@ -172,6 +172,10 @@ class HumanoidController(LeafSystem):
         K, S = LinearQuadraticRegulator(A, B_1, C_2.T.dot(Q).dot(C_2), D.T.dot(Q).dot(D), C_2.T.dot(Q).dot(D))
         self.K = K
         self.S = S
+        # Note this is defined differently when the whole body plan is available
+        # Refer to Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
+        # by Scott Kuindersma · Robin Deits · Maurice Fallon · Andrés Valenzuela · Hongkai Dai · Frank Permenter · Twan Koolen · Pat Marion · Russ Tedrake
+        # Section 4.3
         def V(x, u): # Assume constant z_com, we don't need tvLQR
             y = C_2.dot(x) + D.dot(u)
             def dJ_dx(x):
