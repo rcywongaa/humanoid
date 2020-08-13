@@ -1,5 +1,14 @@
 # Humanoid Locomotion
 
+## Rough Idea
+1. Given start and end position, generate sequence of footsteps
+   - Footstep Planning on Uneven Terrain with Mixed-Integer Convex Optimization (Robin Deits and Russ Tedrake)
+1. Given sequence of footsteps, generate ZMP trajectory
+   - Whole-body Motion Planning with Centroidal Dynamics and Full Kinematics (Hongkai Dai, Andrés Valenzuela and Russ Tedrake)
+1. Given ZMP trajectory and footstep sequence, generate torque outputs
+   - An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion (Scott Kuindersma, Frank Permenter, and Russ Tedrake)
+
+
 ## Setup
 
 ### Install drake
