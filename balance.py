@@ -111,7 +111,7 @@ def normalize(q):
 # From http://www.nt.ntnu.no/users/skoge/prost/proceedings/ecc-2013/data/papers/0927.pdf
 def calcAngularError(q_target, q_source):
     try:
-        quat_err = Quaternion(normalize(q_target)).multiply(Quaternion(normalize(q_source)).inverse())
+        quat_err = Quaternion(normalize(q_source)).multiply(Quaternion(normalize(q_target)).inverse())
         if quat_err.w() < 0:
             return -quat_err.xyz()
         else:
@@ -124,11 +124,10 @@ def calcPoseError(target, source):
     # Make sure pose is expressed in generalized positions (quaternion base)
     assert(target.size == NUM_ACTUATED_DOF + FLOATING_BASE_QUAT_DOF)
 
-    correction = np.zeros(target.shape[0]-1)
-    correction[0:3] = calcAngularError(target[0:4], source[0:4])
-    correction[3:] = (target - source)[4:]
-    print(f"Pelvis error: {correction[0:3]}")
-    return correction
+    error = np.zeros(target.shape[0]-1)
+    error[0:3] = calcAngularError(target[0:4], source[0:4])
+    error[3:] = (source - target)[4:]
+    return error
 
 class HumanoidController(LeafSystem):
     def __init__(self):
@@ -300,12 +299,13 @@ class HumanoidController(LeafSystem):
 
         # Convert q, q_des to generalized velocities form
         q_err = calcPoseError(self.q_des, q)
+        print(f"Pelvis error: {q_err[0:3]}")
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
         ignored_pose_indices = {} # Ignore x position, y position
         relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
         self.relevant_pose_indices = relevant_pose_indices
-        qdd_des = K_p*q_err - K_d*qd
+        qdd_des = -K_p*q_err - K_d*qd
         self.qdd_des = qdd_des
         qdd_err = qdd_des - qdd
         qdd_err = qdd_err*frame_weights
