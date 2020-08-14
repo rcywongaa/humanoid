@@ -14,6 +14,25 @@
 ### Install drake
 <https://drake.mit.edu/python_bindings.html#python-bindings-binary>
 
+### Build from source
+#### Setup
+```
+cd setup/ubuntu
+sudo ./install_prereqs.sh
+```
+
+#### Build
+```
+mkdir build && cd build
+cmake ..
+make
+```
+
+#### Install
+```
+sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
+```
+
 ## Run
 1. Launch `drake-visualizer`
    ```
@@ -21,9 +40,9 @@
    ```
 1. Run `python3 balance.py`
 
-## Troubleshooting
+#### Troubleshooting
 
-### Out of memory when building drake
+##### Out of memory when building drake
 In `CMakeLists.txt`, add `--jobs 4` after `${BAZEL_TARGETS}`
 ```
 ExternalProject_Add(drake_cxx_python
@@ -53,8 +72,22 @@ ExternalProject_Add(drake_cxx_python
 )
 ```
 
+##### Link error on `std::filesystem` calls
+Error
+```
+error: undefined reference to 'std::filesystem::__cxx11::path::_M_find_extension() const'
+```
+Use gcc 7 instead of gcc 8
+
+## Run
+1. Launch `drake-visualizer`
+   ```
+   ./drake-visualizer
+   ```
+1. Run `python3 load_atlas.py`
+
 ### `ModuleNotFoundError: No module named 'vtkCommonCorePython'` when launching drake-visualizer
-In `tools/workspace/drake_visualizer/repository.bzl` set `USE_SYSTEM_VTK=OFF`
+In `tools/workspace/drake_visualizer/repository.bzl` set `USE_SYSTEM_VTK=OFF` and rebuild
 
 ## Resources
 
