@@ -141,7 +141,6 @@ class HumanoidController(LeafSystem):
         self.plant = MultibodyPlant(mbp_time_step)
         load_atlas(self.plant)
         self.upright_context = self.plant.CreateDefaultContext()
-        set_atlas_initial_pose(self.plant, self.upright_context)
         self.q_des = self.plant.GetPositions(self.upright_context)
 
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
