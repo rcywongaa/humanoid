@@ -141,7 +141,7 @@ class HumanoidController(LeafSystem):
         self.plant = MultibodyPlant(mbp_time_step)
         load_atlas(self.plant)
         self.upright_context = self.plant.CreateDefaultContext()
-        self.q_des = self.plant.GetPositions(self.upright_context)
+        self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
 
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.GetPositions(self.upright_context).size + self.plant.GetVelocities(self.upright_context).size)).get_index()
@@ -325,8 +325,8 @@ class HumanoidController(LeafSystem):
         # Hence this not strictly the derivative of q
         qd = self.plant.GetVelocities(plant_context)
 
-        # Convert q, q_des to generalized velocities form
-        q_err = calcPoseError(self.q_des, q)
+        # Convert q, q_nom to generalized velocities form
+        q_err = calcPoseError(self.q_nom, q)
         print(f"Pelvis error: {q_err[0:3]}")
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
