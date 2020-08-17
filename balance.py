@@ -11,6 +11,7 @@
 # Convert to time-varying y_desired and z_com
 
 from load_atlas import load_atlas, set_atlas_initial_pose
+from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
 import numpy as np
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
@@ -24,83 +25,18 @@ from pydrake.systems.framework import BasicVector, LeafSystem
 from pydrake.common.eigen_geometry import Quaternion
 from pydrake.all import eq, le, ge
 
-from collections import namedtuple
-
 import time
 import pdb
 
-FLOATING_BASE_DOF = 6
-FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions
-NUM_ACTUATED_DOF = 30
-TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
 g = 9.81
 z_com = 1.220 # COM after 0.05s
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
 
-JointLimit = namedtuple("JointLimit", ["effort", "lower", "upper"])
-
-JOINT_LIMITS = {
-        "back_bkx" : JointLimit(300, -0.523599, 0.523599),
-        "back_bky" : JointLimit(445, -0.219388, 0.538783),
-        "back_bkz" : JointLimit(106, -0.663225, 0.663225),
-        "l_arm_elx": JointLimit(112, 0, 2.35619),
-        "l_arm_ely": JointLimit(63,  0, 3.14159),
-        "l_arm_shx": JointLimit(99, -1.5708, 1.5708),
-        "l_arm_shz": JointLimit(87, -1.5708, 0.785398),
-        "l_arm_mwx": JointLimit(25, -1.7628, 1.7628),
-        "l_arm_uwy": JointLimit(25, -3.011, 3.011),
-        "l_arm_lwy": JointLimit(25, -2.9671, 2.9671),
-        "l_leg_akx": JointLimit(360, -0.8, 0.8),
-        "l_leg_aky": JointLimit(740, -1, 0.7),
-        "l_leg_hpx": JointLimit(530, -0.523599, 0.523599),
-        "l_leg_hpy": JointLimit(840, -1.61234, 0.65764),
-        "l_leg_hpz": JointLimit(275, -0.174358, 0.786794),
-        "l_leg_kny": JointLimit(890, 0,  2.35637),
-        "neck_ay"  : JointLimit(25, -0.602139, 1.14319),
-        "r_arm_elx": JointLimit(112, -2.35619, 0),
-        "r_arm_ely": JointLimit(63,  0,  3.14159),
-        "r_arm_shx": JointLimit(99, -1.5708, 1.5708),
-        "r_arm_shz": JointLimit(87, -0.785398, 1.5708),
-        "r_arm_mwx": JointLimit(25, -1.7628, 1.7628),
-        "r_arm_uwy": JointLimit(25, -3.011, 3.011),
-        "r_arm_lwy": JointLimit(25, -2.9671, 2.9671),
-        "r_leg_akx": JointLimit(360, -0.8, 0.8),
-        "r_leg_aky": JointLimit(740, -1, 0.7),
-        "r_leg_hpx": JointLimit(530, -0.523599, 0.523599),
-        "r_leg_hpy": JointLimit(840, -1.61234, 0.65764),
-        "r_leg_hpz": JointLimit(275, -0.786794, 0.174358),
-        "r_leg_kny": JointLimit(890, 0, 2.35637)
-}
-
-tau_min = -200.0
-tau_max = 200.0
 mu = 1.0 # Coefficient of friction, same as in load_atlas.py
 eta_min = -0.2
 eta_max = 0.2
 
-# Taken from drake/drake-build/install/share/drake/examples/atlas/urdf/atlas_minimal_contact.urdf
-lfoot_full_contact_points = np.array([
-    [-0.0876,0.066,-0.07645], # left heel
-    [-0.0876,-0.0626,-0.07645], # right heel
-    [0.1728,0.066,-0.07645], # left toe
-    [0.1728,-0.0626,-0.07645], # right toe
-    [0.086,0.066,-0.07645], # left midfoot_front
-    [0.086,-0.0626,-0.07645], # right midfoot_front
-    [-0.0008,0.066,-0.07645], # left midfoot_rear
-    [-0.0008,-0.0626,-0.07645] # right midfoot_rear
-]).T
-
-rfoot_full_contact_points = np.array([
-    [-0.0876,0.0626,-0.07645], # left heel
-    [-0.0876,-0.066,-0.07645], # right heel
-    [0.1728,0.0626,-0.07645], # left toe
-    [0.1728,-0.066,-0.07645], # right toe
-    [0.086,0.0626,-0.07645], # left midfoot_front
-    [0.086,-0.066,-0.07645], # right midfoot_front
-    [-0.0008,0.0626,-0.07645], # left midfoot_rear
-    [-0.0008,-0.066,-0.07645] # right midfoot_rear
-]).T
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
