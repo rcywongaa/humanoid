@@ -57,7 +57,7 @@ class HumanoidController(LeafSystem):
         self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
 
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
-                BasicVector(self.plant.GetPositions(self.upright_context).size + self.plant.GetVelocities(self.upright_context).size)).get_index()
+                BasicVector(self.plant.num_positions() + self.plant.num_velocities())).get_index()
         self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
 
         if is_wbc:
