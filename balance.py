@@ -1,11 +1,13 @@
 #!/usr/bin/python3
 
-# This implements the paper
-# An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion
-# by Scott Kuindersma, Frank Permenter, and Russ Tedrake
+'''
+This implements the paper
+An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion
+by Scott Kuindersma, Frank Permenter, and Russ Tedrake
 
-# TODO:
-# Convert to time-varying y_desired and z_com
+TODO:
+Convert to time-varying y_desired and z_com
+'''
 
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import g, JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
@@ -63,9 +65,11 @@ class HumanoidController(LeafSystem):
             self.input_r_idx = self.DeclareVectorInputPort("r", BasicVector(com_dim)).get_index()
             self.input_rd_idx = self.DeclareVectorInputPort("rd", BasicVector(com_dim)).get_index()
             self.input_rdd_idx = self.DeclareVectorInputPort("rdd", BasicVector(com_dim)).get_index()
-            # Use formulation in Section 4.3 of
-            # Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
-            # by Scott Kuindersma, Robin Deits, Maurice Fallon, Andrés Valenzuela, Hongkai Dai, Frank Permenter, Twan Koolen, Pat Marion, Russ Tedrake
+            '''
+            Use formulation in Section 4.3 of
+            Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
+            by Scott Kuindersma, Robin Deits, Maurice Fallon, Andrés Valenzuela, Hongkai Dai, Frank Permenter, Twan Koolen, Pat Marion, Russ Tedrake
+            '''
 
             Q = 1.0 * np.identity(self.x_size)
             R = 0.1 * np.identity(self.u_size)
@@ -79,9 +83,11 @@ class HumanoidController(LeafSystem):
             def V_full(x, u, r, rd, rdd):
                 x_bar = x - np.vstack([r, rd])
                 u_bar = u - rdd
-                # xd_bar = d(x - [r, rd].T)/dt
-                #         = xd - [rd, rdd].T
-                #         = Ax + Bu - [rd, rdd].T
+                '''
+                xd_bar = d(x - [r, rd].T)/dt
+                        = xd - [rd, rdd].T
+                        = Ax + Bu - [rd, rdd].T
+                '''
                 xd_bar = A.dot(x) + B.dot(u) - np.concatenate([rd, rdd])
                 return x_bar.T.dot(Q).dot(x_bar) + u_bar.T.dot(R).dot(u_bar) + 2*x_bar.T.dot(S).dot(xd_bar)
 
@@ -91,7 +97,7 @@ class HumanoidController(LeafSystem):
             self.x_size = 2*com_dim
             self.u_size = com_dim
             self.input_y_des_idx = self.DeclareVectorInputPort("y_des", BasicVector(zmp_state_size)).get_index()
-            ## Eq(1)
+            ''' Eq(1) '''
             A = np.vstack([
                 np.hstack([0*np.identity(com_dim), 1*np.identity(com_dim)]),
                 np.hstack([0*np.identity(com_dim), 0*np.identity(com_dim)])])
@@ -99,16 +105,18 @@ class HumanoidController(LeafSystem):
                 0*np.identity(com_dim),
                 1*np.identity(com_dim)])
 
-            ## Eq(4)
+            ''' Eq(4) '''
             C_2 = np.hstack([np.identity(2), np.zeros((2,2))]) # C in Eq(2)
             D = -z_com / g * np.identity(zmp_state_size)
             Q = 1.0 * np.identity(zmp_state_size)
 
-            ## Eq(6)
-            # y.T*Q*y
-            # = (C*x+D*u)*Q*(C*x+D*u).T
-            # = x.T*C.T*Q*C*x + u.T*D.T*Q*D*u + x.T*C.T*Q*D*u + u.T*D.T*Q*C*X
-            # = ..                            + 2*x.T*C.T*Q*D*u
+            ''' Eq(6) '''
+            '''
+            y.T*Q*y
+            = (C*x+D*u)*Q*(C*x+D*u).T
+            = x.T*C.T*Q*C*x + u.T*D.T*Q*D*u + x.T*C.T*Q*D*u + u.T*D.T*Q*C*X
+            = ..                            + 2*x.T*C.T*Q*D*u
+            '''
             K, S = LinearQuadraticRegulator(A, B_1, C_2.T.dot(Q).dot(C_2), D.T.dot(Q).dot(D), C_2.T.dot(Q).dot(D))
             # Use original formulation
             def V_full(x, u, y_des): # Assume constant z_com, we don't need tvLQR
@@ -148,7 +156,7 @@ class HumanoidController(LeafSystem):
         N_c_rfoot = rfoot_contact_points.shape[1] # Num contacts per foot
         N_c = N_c_lfoot + N_c_rfoot # num contact points
 
-        ## Eq(7)
+        ''' Eq(7) '''
         H = self.plant.CalcMassMatrixViaInverseDynamics(plant_context)
         # Note that CalcGravityGeneralizedForces assumes the form Mv̇ + C(q, v)v = tau_g(q) + tau_app
         # while Eq(7) assumes gravity is accounted in C (on the left hand side)
@@ -164,7 +172,7 @@ class HumanoidController(LeafSystem):
                 rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
         Phi = np.vstack([Phi_lfoot, Phi_rfoot])
 
-        ## Eq(8)
+        ''' Eq(8) '''
         v_idx_act = self.v_idx_act
         H_f = H[0:v_idx_act,:]
         H_a = H[v_idx_act:,:]
@@ -174,7 +182,7 @@ class HumanoidController(LeafSystem):
         Phi_f_T = Phi.T[0:v_idx_act:,:]
         Phi_a_T = Phi.T[v_idx_act:,:]
 
-        ## Eq(9)
+        ''' Eq(9) '''
         # Assume flat ground for now
         n = np.array([
             [0],
@@ -189,7 +197,7 @@ class HumanoidController(LeafSystem):
             for j in range(N_c):
                 v[i,j] = (n+mu*d)[:,i]
 
-        ## Quadratic Program I
+        ''' Quadratic Program I '''
         prog = MathematicalProgram()
         qdd = prog.NewContinuousVariables(self.plant.num_velocities(), name="qdd") # To ignore 6 DOF floating base
         self.qdd = qdd
@@ -221,7 +229,7 @@ class HumanoidController(LeafSystem):
         u = prog.NewContinuousVariables(self.u_size, name="u") # x_com_dd, y_com_dd
         self.u = u
 
-        ## Eq(10)
+        ''' Eq(10) '''
         w = 0.01
         epsilon = 1.0e-8
         K_p = 10.0
@@ -252,12 +260,12 @@ class HumanoidController(LeafSystem):
                 + epsilon * np.sum(np.square(beta))
                 + eta.dot(eta))
 
-        ## Eq(11) - 0.003s
+        ''' Eq(11) - 0.003s '''
         eq11_lhs = H_f.dot(qdd)+C_f
         eq11_rhs = Phi_f_T.dot(lambd)
         prog.AddLinearConstraint(eq(eq11_lhs, eq11_rhs))
 
-        ## Eq(12) - 0.005s
+        ''' Eq(12) - 0.005s '''
         alpha = 0.1
         Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
                 plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
@@ -271,7 +279,7 @@ class HumanoidController(LeafSystem):
         eq12_rhs = -alpha*J.dot(qd) + eta
         prog.AddLinearConstraint(eq(eq12_lhs, eq12_rhs))
 
-        ## Eq(13) - 0.015s
+        ''' Eq(13) - 0.015s '''
         def tau(qdd, lambd):
             return self.B_a_inv.dot(H_a.dot(qdd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
@@ -279,24 +287,21 @@ class HumanoidController(LeafSystem):
         prog.AddLinearConstraint(ge(eq13_lhs, -self.sorted_max_efforts))
         prog.AddLinearConstraint(le(eq13_lhs, self.sorted_max_efforts))
 
-        ## Eq(14)
+        ''' Eq(14) '''
         for j in range(N_c):
             beta_v = beta[:,j].dot(v[:,j])
             for k in range(N_f):
                 prog.AddLinearConstraint(lambd[N_f*j+k] == beta_v[k])
 
-        ## Eq(15)
+        ''' Eq(15) '''
         for b in beta.flat:
             prog.AddLinearConstraint(b >= 0.0)
 
-        ## Eq(16)
+        ''' Eq(16) '''
         prog.AddLinearConstraint(ge(eta, eta_min))
         prog.AddLinearConstraint(le(eta, eta_max))
 
-        ### Below are constraints that aren't explicitly stated in the paper
-        ### but that seemed important
-
-        ## Enforce x as com
+        ''' Enforce x as com '''
         com = self.plant.CalcCenterOfMassPosition(plant_context)
         com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV,
@@ -306,7 +311,7 @@ class HumanoidController(LeafSystem):
         prog.AddLinearConstraint(x[2] == com_d[0])
         prog.AddLinearConstraint(x[3] == com_d[1])
 
-        ## Enforce u as com_dd
+        ''' Enforce u as com_dd '''
         com_dd = (
                 self.plant.CalcBiasCenterOfMassTranslationalAcceleration(
                     plant_context, JacobianWrtVariable.kV,
@@ -318,7 +323,7 @@ class HumanoidController(LeafSystem):
         prog.AddLinearConstraint(u[0] == com_dd[0])
         prog.AddLinearConstraint(u[1] == com_dd[1])
 
-        ## Respect joint limits
+        ''' Respect joint limits '''
         for name, limit in JOINT_LIMITS.items():
             # Get the corresponding joint value
             joint_pos = self.plant.GetJointByName(name).get_angle(plant_context)
