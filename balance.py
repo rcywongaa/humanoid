@@ -4,14 +4,11 @@
 # An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion
 # by Scott Kuindersma, Frank Permenter, and Russ Tedrake
 
-# Notes
-# Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
-
 # TODO:
 # Convert to time-varying y_desired and z_com
 
 from load_atlas import load_atlas, set_atlas_initial_pose
-from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
+from load_atlas import g, JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
 from utility import calcPoseError, normalize
 import numpy as np
 from pydrake.systems.framework import DiagramBuilder
@@ -29,7 +26,6 @@ from pydrake.all import eq, le, ge
 import time
 import pdb
 
-g = 9.81
 z_com = 1.220 # COM after 0.05s
 zmp_state_size = 2
 mbp_time_step = 1.0e-3

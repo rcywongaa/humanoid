@@ -18,6 +18,11 @@ from collections import namedtuple
 Floating base is attached at the pelvis link
 '''
 
+# Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
+M = 175
+
+g = 9.81
+
 JointLimit = namedtuple("JointLimit", ["effort", "lower", "upper"])
 
 JOINT_LIMITS = {
