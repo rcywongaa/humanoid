@@ -239,7 +239,7 @@ class HumanoidController(LeafSystem):
         qd = self.plant.GetVelocities(plant_context)
 
         # Convert q, q_nom to generalized velocities form
-        q_err = calcPoseError(self.q_nom, q)
+        q_err = calcPoseError(q, self.q_nom)
         print(f"Pelvis error: {q_err[0:3]}")
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
