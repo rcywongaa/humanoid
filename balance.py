@@ -291,8 +291,7 @@ class HumanoidController(LeafSystem):
         ''' Eq(14) '''
         for j in range(N_c):
             beta_v = beta[:,j].dot(v[:,j])
-            for k in range(N_f):
-                prog.AddLinearConstraint(lambd[N_f*j+k] == beta_v[k])
+            prog.AddLinearConstraint(eq(lambd[N_f*j:N_f*j+3], beta_v))
 
         ''' Eq(15) '''
         for b in beta.flat:
