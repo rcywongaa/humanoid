@@ -15,7 +15,9 @@ from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
+from pydrake.systems.framework import BasicVector, LeafSystem, Demultiplexer
 from utility import calcPoseError
+from balance import HumanoidController
 import numpy as np
 
 N_d = 4 # friction cone approximated as a i-pyramid
@@ -46,15 +48,20 @@ class HumanoidPlanner(LeafSystem):
         self.q_nom = self.plant.GetPositions(self.upright_context)
 
         self.N = 50
+        self.T = 10.0 # 10 seconds
 
+        self.input_q_init_idx = self.DeclareVectorInputPort("q_init", BasicVector(self.plant.num_positions())).get_index()
         self.input_q_des_idx = self.DeclareVectorInputPort("q_des", BasicVector(self.plant.num_positions())).get_index()
-        self.output_r_rd_rdd_idx = self.DeclareVectorOutputPort("r_rd_rdd", BasicVector(3*3), self.calcTrajectory).get_index()
+        self.input_t_idx = self.DeclareVectorInputPort("t", BasicVector(1)).get_index()
+        self.output_r_idx = self.DeclareVectorOutputPort("r", BasicVector(3), self.get_r).get_index()
+        self.output_rd_idx = self.DeclareVectorOutputPort("rd", BasicVector(3), self.get_rd).get_index()
+        self.output_rdd_idx = self.DeclareVectorOutputPort("rdd", BasicVector(3), self.get_rdd).get_index()
 
         self.sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(self.plant)])
         self.sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(self.plant)])
         self.sorted_joint_velocity_limits = np.array([entry[1].velocity for entry in getSortedJointLimits(self.plant)])
 
-    def calcTrajectory(self, context, output):
+    def calcTrajectory(self, q_init, q_final):
         prog = MathematicalProgram()
         q = prog.NewContinuousVariables(rows=N, cols=self.plant.num_positions(), name="q")
         v = prog.NewContinuousVariables(rows=N, cols=self.plant.num_velocities(), name="v")
@@ -79,6 +86,7 @@ class HumanoidPlanner(LeafSystem):
 
         for k in range(self.N):
             self.plant_autodiff.SetPositions(autodiff_context, q[k])
+            self.plant_autodiff.SetVelocities(autodiff_context, v[k])
             lfoot_full_contact_positions = self.plant_autodiff.CalcPointsPositions(
                     autodiff_context, self.plant_autodiff.GetFrameByName("l_foot"),
                     lfoot_full_contact_points, self.plant_autodiff.world_frame())
@@ -105,7 +113,7 @@ class HumanoidPlanner(LeafSystem):
             ''' Eq(7i) '''
             prog.AddLinearConstraint(eq(cj, contact_positions))
             ''' Eq(7j) '''
-            # TODO
+            ''' We let the contact points be wherever it wants for now... '''
 
             ''' Eq(7k) '''
             ''' Constrain admissible posture '''
@@ -123,6 +131,7 @@ class HumanoidPlanner(LeafSystem):
             for i in range(num_contact_points):
                 prog.AddLinearConstraint(eq(tauj[i], np.array([0.0, 0.0, 0.0])))
 
+            ''' Assume flat ground for now... '''
             ''' Eq(8a) '''
             contact_positions_z = contact_positions[2,:]
             prog.AddConstraint(Fj[:,2].dot(contact_positions_z) == 0.0)
@@ -131,10 +140,6 @@ class HumanoidPlanner(LeafSystem):
             ''' Eq(8c) '''
             prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
             prog.AddLinearConstraint(ge(contact_position_z, 0.0))
-            ''' Eq(9a) '''
-            # TODO
-            ''' Eq(9b) '''
-            # TODO
 
         for k in range(1, self.N):
             ''' Eq(7d) '''
@@ -146,6 +151,15 @@ class HumanoidPlanner(LeafSystem):
             ''' Eq(7g) '''
             prog.AddLinearConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
 
+            Fj = np.reshape(F[k], (num_contact_points, 3))
+            cj = np.reshape(c[k], (num_contact_points, 3))
+            cj_prev = np.reshape(c[k-1], (num_contact_points, 3))
+            for i in range(num_contact_points):
+                ''' Assume flat ground for now... '''
+                ''' Eq(9a) '''
+                prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) == 0.0)
+                ''' Eq(9b) '''
+                prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) == 0.0)
         ''' Eq(10) '''
         Q_q = 0.1 * np.identity(self.plant.num_velocities())
         Q_v = 0.2 * np.identity(self.plant.num_velocities())
@@ -156,8 +170,69 @@ class HumanoidPlanner(LeafSystem):
                     + v[k].dot(Q_v).dot(v[k])
                     + rdd[k].dot(rdd[k])))
 
+        ''' Additional constraints not explicitly stated '''
+        ''' Constrain initial pose '''
+        prog.AddLinearConstraint(eq(q[0], q_init))
+        ''' Constrain final pose '''
+        prog.AddLinearConstraint(eq(q[-1], q_final))
+        ''' Constrain time taken '''
+        prog.AddLinearConstraint(le(np.sum(dt), self.T))
+
+        start_solve_time = time.time()
+        result = Solve(prog)
+        print(f"Solve time: {time.time() - start_solve_time}s")
+        if not result.is_success():
+            print(f"FAILED")
+            pdb.set_trace()
+            exit(-1)
+        print(f"Cost: {result.get_optimal_cost()}")
+        self.q_init = q_init
+        self.q_final = q_final
+        self.r_sol = result.GetSolution(r)
+        self.rd_sol = result.GetSolution(rd)
+        self.rdd_sol = result.GetSolution(rdd)
+        self.kt_sol = result.GetSolution(kt)
+
+    def get_r(self, context, output):
+        # TODO: Based on the current t input, output the interpolated r
+    def get_rd(self, context, output):
+        # TODO
+    def get_rdd(self, context, output):
+        # TODO
+
 def main():
-    pass
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
+    load_atlas(plant, add_ground=True)
+    plant_context = plant.CreateDefaultContext()
+
+    controller = builder.AddSystem(HumanoidController(is_wbc=True))
+    controller.set_name("HumanoidController")
+
+    planner = builder.AddSystem(HumanoidPlanner())
+
+    ''' Connect atlas plant to controller '''
+    builder.Connect(plant.get_state_output_port(), controller.GetInputPort("q_v"))
+    builder.Connect(controller.GetOutputPort("tau"), plant.get_actuation_input_port())
+
+    ''' Connect planner to controller '''
+    r_rd_rdd_demux = builder.AddSystem(Demultiplexer(3*3, 3))
+    builder.Connect(planner.GetOutputPort("r_rd_rdd"), r_rd_rdd_demux.get_input_port())
+    builder.Connect(r_rd_rdd_demux.get_output_port(0), controller.GetInputPort("r"))
+    builder.Connect(r_rd_rdd_demux.get_output_port(1), controller.GetInputPort("rd"))
+    builder.Connect(r_rd_rdd_demux.get_output_port(2), controller.GetInputPort("rdd"))
+    # TODO: Properly interpolate r, rd, rdd
+
+    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
+    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
+    diagram = builder.Build()
+    diagram_context = diagram.CreateDefaultContext()
+    plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
+    set_atlas_initial_pose(plant, plant_context)
+
+    simulator = Simulator(diagram, diagram_context)
+    simulator.set_target_realtime_rate(0.1)
+    simulator.AdvanceTo(5.0)
 
 if __name__ == "__main__":
     main()
