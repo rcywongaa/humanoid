@@ -10,6 +10,7 @@ Convert to time-varying y_desired and z_com
 '''
 
 from load_atlas import load_atlas, set_atlas_initial_pose
+from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from load_atlas import g, JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
 from utility import calcPoseError, normalize
 import numpy as np
@@ -138,7 +139,7 @@ class HumanoidController(LeafSystem):
         self.B_a_inv = np.linalg.inv(self.B_a)
 
         # Sort joint effort limits to be the same order as tau in Eq(13)
-        self.sorted_max_efforts = np.array([entry[1].effort for entry in sorted(JOINT_LIMITS.items(), key=lambda entry : self.getActuatorIndex(entry[0]))])
+        self.sorted_max_efforts = np.array([entry[1].effort for entry in getSortedJointLimits(self.plant)])
 
     def create_qp1(self, plant_context, V):
         # Determine contact points
@@ -328,7 +329,7 @@ class HumanoidController(LeafSystem):
             # Get the corresponding joint value
             joint_pos = self.plant.GetJointByName(name).get_angle(plant_context)
             # Get the corresponding actuator index
-            act_idx = self.getActuatorIndex(name)
+            act_idx = getActuatorIndex(self.plant, name)
             # Use the actuator index to find the corresponding generalized coordinate index
             q_idx = np.where(B_7[:,act_idx] == 1)[0][0]
 
@@ -399,8 +400,8 @@ class HumanoidController(LeafSystem):
                 "l_leg_hpy",
                 "r_leg_hpy"
         ]
-        print(f"tau = {tau[self.getActuatorIndices(interested_joints)]}")
-        print(f"joint angles = {self.getJointValues(interested_joints, current_plant_context)}")
+        print(f"tau = {tau[getActuatorIndices(self.plant, interested_joints)]}")
+        print(f"joint angles = {getJointValues(self.plant, interested_joints, current_plant_context)}")
 
         output.SetFromVector(tau)
         print("========================================")
@@ -421,29 +422,6 @@ class HumanoidController(LeafSystem):
                     self.plant.world_frame(), self.plant.world_frame())
                 .dot(qdd_sol))
         return com, com_d, com_dd
-
-    def getActuatorIndex(self, joint_name):
-        return int(self.plant.GetJointActuatorByName(joint_name + "_motor").index())
-
-    def getActuatorIndices(self, joint_names):
-        ret = []
-        for name in joint_names:
-            idx = self.getActuatorIndex(name)
-            ret.append(idx)
-        return ret
-
-    def getJointValues(self, joint_names, context):
-        ret = []
-        for name in joint_names:
-            ret.append(self.plant.GetJointByName(name).get_angle(context))
-        return ret
-
-    def getOrderedJointLimits(self):
-        ret = [None] * len(JOINT_LIMITS)
-        for name, limit in JOINT_LIMITS.items():
-            i = self.getActuatorIndex(name)
-            ret[i] = limit
-        return ret
 
 def main():
     builder = DiagramBuilder()

@@ -58,6 +58,26 @@ JOINT_LIMITS = {
         "r_leg_kny": JointLimit(890, 0, 2.35637)
 }
 
+def getActuatorIndex(plant, joint_name):
+    return int(plant.GetJointActuatorByName(joint_name + "_motor").index())
+
+def getSortedJointLimits(plant):
+    return sorted(JOINT_LIMITS.items(), key=lambda entry : getActuatorIndex(plant, entry[0]))
+
+def getJointValues(plant, joint_names, context):
+    ret = []
+    for name in joint_names:
+        ret.append(plant.GetJointByName(name).get_angle(context))
+    return ret
+
+
+def getActuatorIndices(plant, joint_names):
+    ret = []
+    for name in joint_names:
+        idx = getActuatorIndex(plant, name)
+        ret.append(idx)
+    return ret
+
 # Taken from drake/drake-build/install/share/drake/examples/atlas/urdf/atlas_minimal_contact.urdf
 lfoot_full_contact_points = np.array([
     [-0.0876,0.066,-0.07645], # left heel
