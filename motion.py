@@ -9,17 +9,19 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF, M
-from pydrake.all import eq, le, ge, PiecewisePolynomial, PiecewiseCubicTrajectory, CubicHermite
+from pydrake.all import eq, le, ge, PiecewisePolynomial, PiecewiseTrajectory
 from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph
 from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
-from pydrake.systems.framework import BasicVector, LeafSystem, Demultiplexer
+from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
+from pydrake.systems.framework import BasicVector, LeafSystem
 from utility import calcPoseError
 from balance import HumanoidController
 import numpy as np
 
+mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
@@ -62,7 +64,7 @@ class Interpolator(LeafSystem):
                         samples=np.hstack([r, r_next],
                         sample_dot=[rd, rd_next])))
             t += dt
-        self.trajectory = PiecewiseCubicTrajectory(self.trajectory_polynomial)
+        self.trajectory = PiecewiseTrajectory(self.trajectory_polynomial)
 
     def get_r(self, context, output):
         t = self.EvalVectorInput(context, self.input_t_idx).get_value()
@@ -78,8 +80,8 @@ class Interpolator(LeafSystem):
 
 def calcTrajectory(q_init, q_final):
     plant = MultibodyPlant(mbp_time_step)
-    plant_autodiff = plant.ToAutoDiffXd()
     load_atlas(plant)
+    plant_autodiff = plant.ToAutoDiffXd()
     upright_context = plant.CreateDefaultContext()
     q_nom = plant.GetPositions(upright_context)
 
@@ -130,7 +132,7 @@ def calcTrajectory(q_init, q_final):
         ''' Eq(7b) '''
         cj = np.reshape(c[k], (num_contact_points, 3))
         tauj = np.reshape(tau[k], (num_contact_points, 3))
-        prog.AddLinearConstraint(eq(hd[k], np.sum((cj - r[k]).cross(Fj) + tauj, axis=0)))
+        prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
         ''' Eq(7c) '''
         # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
         # TODO
@@ -232,7 +234,7 @@ def main():
     load_atlas(plant, add_ground=True)
     plant_context = plant.CreateDefaultContext()
 
-    q_init = plant.getPositions(plant_context)
+    q_init = plant.GetPositions(plant_context)
     q_final = q_init
     q_final[4] = 4 # x position of pelvis
 
