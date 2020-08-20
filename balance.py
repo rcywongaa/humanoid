@@ -237,10 +237,7 @@ class HumanoidController(LeafSystem):
         K_d = 2.0
         frame_weights = np.ones((TOTAL_DOF))
 
-        # For generalized positions, first 7 values are 4 quaternion + 3 x,y,z
         q = self.plant.GetPositions(plant_context)
-        # For generalized velocities, first 6 values are 3 rotational velocities + 3 xd, yd, zd
-        # Hence this not strictly the derivative of q
         qd = self.plant.GetVelocities(plant_context)
 
         # Convert q, q_nom to generalized velocities form

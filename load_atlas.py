@@ -16,6 +16,9 @@ from collections import namedtuple
 
 '''
 Floating base is attached at the pelvis link
+For generalized positions, first 7 values are 4 quaternion + 3 x,y,z of floating base
+For generalized velocities, first 6 values are 3 rotational velocities + 3 xd, yd, zd
+Hence generalized velocities are not strictly the derivative of generalized positions
 '''
 
 # Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
