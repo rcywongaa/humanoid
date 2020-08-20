@@ -38,167 +38,155 @@ for i in range(N_d):
     for j in range(num_contact_points):
         v[i,j] = (n+mu*d)[:,i]
 
-class HumanoidPlanner(LeafSystem):
-    def __init__(self):
-        LeafSystem.__init__(self)
-        self.plant = MultibodyPlant(mbp_time_step)
-        self.plant_autodiff = self.plant.ToAutoDiffXd()
-        load_atlas(self.plant)
-        self.upright_context = self.plant.CreateDefaultContext()
-        self.q_nom = self.plant.GetPositions(self.upright_context)
+def calcTrajectory(q_init, q_final):
+    plant = MultibodyPlant(mbp_time_step)
+    plant_autodiff = plant.ToAutoDiffXd()
+    load_atlas(plant)
+    upright_context = plant.CreateDefaultContext()
+    q_nom = plant.GetPositions(upright_context)
 
-        self.N = 50
-        self.T = 10.0 # 10 seconds
+    N = 50
+    T = 10.0 # 10 seconds
 
-        self.input_q_init_idx = self.DeclareVectorInputPort("q_init", BasicVector(self.plant.num_positions())).get_index()
-        self.input_q_des_idx = self.DeclareVectorInputPort("q_des", BasicVector(self.plant.num_positions())).get_index()
-        self.input_t_idx = self.DeclareVectorInputPort("t", BasicVector(1)).get_index()
-        self.output_r_idx = self.DeclareVectorOutputPort("r", BasicVector(3), self.get_r).get_index()
-        self.output_rd_idx = self.DeclareVectorOutputPort("rd", BasicVector(3), self.get_rd).get_index()
-        self.output_rdd_idx = self.DeclareVectorOutputPort("rdd", BasicVector(3), self.get_rdd).get_index()
+    sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(plant)])
+    sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(plant)])
+    sorted_joint_velocity_limits = np.array([entry[1].velocity for entry in getSortedJointLimits(plant)])
 
-        self.sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(self.plant)])
-        self.sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(self.plant)])
-        self.sorted_joint_velocity_limits = np.array([entry[1].velocity for entry in getSortedJointLimits(self.plant)])
+    prog = MathematicalProgram()
+    q = prog.NewContinuousVariables(rows=N, cols=plant.num_positions(), name="q")
+    v = prog.NewContinuousVariables(rows=N, cols=plant.num_velocities(), name="v")
+    dt = prog.NewContinuousVariables(N, name="dt")
+    r = prog.NewContinuousVariables(rows=N, cols=3, name="r")
+    rd = prog.NewContinuousVariables(rows=N, cols=3, name="rd")
+    rdd = prog.NewContinuousVariables(rows=N, cols=3, name="rdd")
+    contact_dim = 3*num_contact_points
+    # The cols are ordered as
+    # [contact1_x, contact1_y, contact1_z, contact2_x, contact2_y, contact2_z, ...]
+    c = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="c")
+    F = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="F")
+    tau = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="tau")
+    h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
+    hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
 
-    def calcTrajectory(self, q_init, q_final):
-        prog = MathematicalProgram()
-        q = prog.NewContinuousVariables(rows=N, cols=self.plant.num_positions(), name="q")
-        v = prog.NewContinuousVariables(rows=N, cols=self.plant.num_velocities(), name="v")
-        dt = prog.NewContinuousVariables(N, name="dt")
-        r = prog.NewContinuousVariables(rows=N, cols=3, name="r")
-        rd = prog.NewContinuousVariables(rows=N, cols=3, name="rd")
-        rdd = prog.NewContinuousVariables(rows=N, cols=3, name="rdd")
-        contact_dim = 3*num_contact_points
-        # The cols are ordered as
-        # [contact1_x, contact1_y, contact1_z, contact2_x, contact2_y, contact2_z, ...]
-        c = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="c")
-        F = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="F")
-        tau = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="tau")
-        h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
-        hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
+    ''' Additional variables not explicitly stated '''
+    # Friction cone scale
+    beta = prog.NewContinuousVariables(rows=N, cols=num_contact_points*N_d, name="beta")
 
-        ''' Additional variables not explicitly stated '''
-        # Friction cone scale
-        beta = prog.NewContinuousVariables(rows=N, cols=num_contact_points*N_d, name="beta")
+    autodiff_context = plant_autodiff.CreateDefaultContext()
 
-        autodiff_context = self.plant_autodiff.CreateDefaultContext()
+    for k in range(N):
+        plant_autodiff.SetPositions(autodiff_context, q[k])
+        plant_autodiff.SetVelocities(autodiff_context, v[k])
+        lfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
+                autodiff_context, plant_autodiff.GetFrameByName("l_foot"),
+                lfoot_full_contact_points, plant_autodiff.world_frame())
+        rfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
+                autodiff_context, plant_autodiff.GetFrameByName("r_foot"),
+                rfoot_full_contact_points, plant_autodiff.world_frame())
+        contact_positions = np.concatenate([lfoot_full_contact_points, rfoot_full_contact_points], axis=1)
 
-        for k in range(self.N):
-            self.plant_autodiff.SetPositions(autodiff_context, q[k])
-            self.plant_autodiff.SetVelocities(autodiff_context, v[k])
-            lfoot_full_contact_positions = self.plant_autodiff.CalcPointsPositions(
-                    autodiff_context, self.plant_autodiff.GetFrameByName("l_foot"),
-                    lfoot_full_contact_points, self.plant_autodiff.world_frame())
-            rfoot_full_contact_positions = self.plant_autodiff.CalcPointsPositions(
-                    autodiff_context, self.plant_autodiff.GetFrameByName("r_foot"),
-                    rfoot_full_contact_points, self.plant_autodiff.world_frame())
-            contact_positions = np.concatenate([lfoot_full_contact_points, rfoot_full_contact_points], axis=1)
+        ''' Eq(7a) '''
+        g = np.array([0, 0, -9.81])
+        Fj = np.reshape(F[k], (num_contact_points, 3))
+        prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g))
+        ''' Eq(7b) '''
+        cj = np.reshape(c[k], (num_contact_points, 3))
+        tauj = np.reshape(tau[k], (num_contact_points, 3))
+        prog.AddLinearConstraint(eq(hd[k], np.sum((cj - r[k]).cross(Fj) + tauj, axis=0)))
+        ''' Eq(7c) '''
+        # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
+        # TODO
 
-            ''' Eq(7a) '''
-            g = np.array([0, 0, -9.81])
-            Fj = np.reshape(F[k], (num_contact_points, 3))
-            prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g))
-            ''' Eq(7b) '''
-            cj = np.reshape(c[k], (num_contact_points, 3))
-            tauj = np.reshape(tau[k], (num_contact_points, 3))
-            prog.AddLinearConstraint(eq(hd[k], np.sum((cj - r[k]).cross(Fj) + tauj, axis=0)))
-            ''' Eq(7c) '''
-            # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
-            # TODO
+        ''' Eq(7h) '''
+        com = plant_autodiff.CalcCenterOfMassPosition(autodiff_context)
+        prog.AddLinearConstraint(eq(r[k], com))
+        ''' Eq(7i) '''
+        prog.AddLinearConstraint(eq(cj, contact_positions))
+        ''' Eq(7j) '''
+        ''' We let the contact points be wherever it wants for now... '''
 
-            ''' Eq(7h) '''
-            com = self.plant_autodiff.CalcCenterOfMassPosition(autodiff_context)
-            prog.AddLinearConstraint(eq(r[k], com))
-            ''' Eq(7i) '''
-            prog.AddLinearConstraint(eq(cj, contact_positions))
-            ''' Eq(7j) '''
-            ''' We let the contact points be wherever it wants for now... '''
+        ''' Eq(7k) '''
+        ''' Constrain admissible posture '''
+        prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_upper_limits))
+        prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_lower_limits))
+        ''' Constrain velocities '''
+        prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], sorted_joint_velocity_limits))
+        prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -sorted_joint_velocity_limits))
+        ''' Constrain forces within friction cone '''
+        beta_k = np.reshape(beta[k], (num_contact_points, N_d))
+        for i in range(num_contact_points):
+            beta_v = beta_k[i].dot(v[:,i,:])
+            prog.AddLinearConstraint(eq(Fj[i], beta_v))
+        ''' Constrain torques - assume no torque allowed for now '''
+        for i in range(num_contact_points):
+            prog.AddLinearConstraint(eq(tauj[i], np.array([0.0, 0.0, 0.0])))
 
-            ''' Eq(7k) '''
-            ''' Constrain admissible posture '''
-            prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], self.sorted_joint_position_upper_limits))
-            prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], self.sorted_joint_position_lower_limits))
-            ''' Constrain velocities '''
-            prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], self.sorted_joint_velocity_limits))
-            prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -self.sorted_joint_velocity_limits))
-            ''' Constrain forces within friction cone '''
-            beta_k = np.reshape(beta[k], (num_contact_points, N_d))
-            for i in range(num_contact_points):
-                beta_v = beta_k[i].dot(v[:,i,:])
-                prog.AddLinearConstraint(eq(Fj[i], beta_v))
-            ''' Constrain torques - assume no torque allowed for now '''
-            for i in range(num_contact_points):
-                prog.AddLinearConstraint(eq(tauj[i], np.array([0.0, 0.0, 0.0])))
+        ''' Assume flat ground for now... '''
+        ''' Eq(8a) '''
+        contact_positions_z = contact_positions[2,:]
+        prog.AddConstraint(Fj[:,2].dot(contact_positions_z) == 0.0)
+        ''' Eq(8b) '''
+        prog.AddConstraint(tauj.dot(tauj).dot(contact_positions_z) == 0)
+        ''' Eq(8c) '''
+        prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
+        prog.AddLinearConstraint(ge(contact_position_z, 0.0))
 
+    for k in range(1, N):
+        ''' Eq(7d) '''
+        prog.AddLinearConstraint(eq(q[k] - q[k-1], v[k]*dt[k]))
+        ''' Eq(7e) '''
+        prog.AddLinearConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
+        ''' Eq(7f) '''
+        prog.AddLinearConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
+        ''' Eq(7g) '''
+        prog.AddLinearConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
+
+        Fj = np.reshape(F[k], (num_contact_points, 3))
+        cj = np.reshape(c[k], (num_contact_points, 3))
+        cj_prev = np.reshape(c[k-1], (num_contact_points, 3))
+        for i in range(num_contact_points):
             ''' Assume flat ground for now... '''
-            ''' Eq(8a) '''
-            contact_positions_z = contact_positions[2,:]
-            prog.AddConstraint(Fj[:,2].dot(contact_positions_z) == 0.0)
-            ''' Eq(8b) '''
-            prog.AddConstraint(tauj.dot(tauj).dot(contact_positions_z) == 0)
-            ''' Eq(8c) '''
-            prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-            prog.AddLinearConstraint(ge(contact_position_z, 0.0))
+            ''' Eq(9a) '''
+            prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) == 0.0)
+            ''' Eq(9b) '''
+            prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) == 0.0)
+    ''' Eq(10) '''
+    Q_q = 0.1 * np.identity(plant.num_velocities())
+    Q_v = 0.2 * np.identity(plant.num_velocities())
+    for k in range(N):
+        q_err = calcPoseError(q[k], q_nom)
+        prog.AddCost(dt[k]*(
+                q_err.dot(Q_q).dot(q_err)
+                + v[k].dot(Q_v).dot(v[k])
+                + rdd[k].dot(rdd[k])))
 
-        for k in range(1, self.N):
-            ''' Eq(7d) '''
-            prog.AddLinearConstraint(eq(q[k] - q[k-1], v[k]*dt[k]))
-            ''' Eq(7e) '''
-            prog.AddLinearConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
-            ''' Eq(7f) '''
-            prog.AddLinearConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
-            ''' Eq(7g) '''
-            prog.AddLinearConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
+    ''' Additional constraints not explicitly stated '''
+    ''' Constrain initial pose '''
+    prog.AddLinearConstraint(eq(q[0], q_init))
+    ''' Constrain initial velocity '''
+    prog.AddLinearConstraint(eq(v[0], 0.0))
+    ''' Constrain final pose '''
+    prog.AddLinearConstraint(eq(q[-1], q_final))
+    ''' Constrain final velocity '''
+    prog.AddLinearConstraint(eq(v[0], 0.0))
+    ''' Constrain time taken '''
+    prog.AddLinearConstraint(le(np.sum(dt), T))
 
-            Fj = np.reshape(F[k], (num_contact_points, 3))
-            cj = np.reshape(c[k], (num_contact_points, 3))
-            cj_prev = np.reshape(c[k-1], (num_contact_points, 3))
-            for i in range(num_contact_points):
-                ''' Assume flat ground for now... '''
-                ''' Eq(9a) '''
-                prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) == 0.0)
-                ''' Eq(9b) '''
-                prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) == 0.0)
-        ''' Eq(10) '''
-        Q_q = 0.1 * np.identity(self.plant.num_velocities())
-        Q_v = 0.2 * np.identity(self.plant.num_velocities())
-        for k in range(self.N):
-            q_err = calcPoseError(q[k], self.q_nom)
-            prog.AddCost(dt[k]*(
-                    q_err.dot(Q_q).dot(q_err)
-                    + v[k].dot(Q_v).dot(v[k])
-                    + rdd[k].dot(rdd[k])))
+    ''' Solve '''
+    start_solve_time = time.time()
+    result = Solve(prog)
+    print(f"Solve time: {time.time() - start_solve_time}s")
+    if not result.is_success():
+        print(f"FAILED")
+        pdb.set_trace()
+        exit(-1)
+    print(f"Cost: {result.get_optimal_cost()}")
+    r_sol = result.GetSolution(r)
+    rd_sol = result.GetSolution(rd)
+    rdd_sol = result.GetSolution(rdd)
+    kt_sol = result.GetSolution(kt)
 
-        ''' Additional constraints not explicitly stated '''
-        ''' Constrain initial pose '''
-        prog.AddLinearConstraint(eq(q[0], q_init))
-        ''' Constrain final pose '''
-        prog.AddLinearConstraint(eq(q[-1], q_final))
-        ''' Constrain time taken '''
-        prog.AddLinearConstraint(le(np.sum(dt), self.T))
-
-        start_solve_time = time.time()
-        result = Solve(prog)
-        print(f"Solve time: {time.time() - start_solve_time}s")
-        if not result.is_success():
-            print(f"FAILED")
-            pdb.set_trace()
-            exit(-1)
-        print(f"Cost: {result.get_optimal_cost()}")
-        self.q_init = q_init
-        self.q_final = q_final
-        self.r_sol = result.GetSolution(r)
-        self.rd_sol = result.GetSolution(rd)
-        self.rdd_sol = result.GetSolution(rdd)
-        self.kt_sol = result.GetSolution(kt)
-
-    def get_r(self, context, output):
-        # TODO: Based on the current t input, output the interpolated r
-    def get_rd(self, context, output):
-        # TODO
-    def get_rdd(self, context, output):
-        # TODO
+    return r_sol, rd_sol, rdd_sol, kt_sol
 
 def main():
     builder = DiagramBuilder()
@@ -209,19 +197,12 @@ def main():
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
     controller.set_name("HumanoidController")
 
-    planner = builder.AddSystem(HumanoidPlanner())
-
     ''' Connect atlas plant to controller '''
     builder.Connect(plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), plant.get_actuation_input_port())
 
-    ''' Connect planner to controller '''
-    r_rd_rdd_demux = builder.AddSystem(Demultiplexer(3*3, 3))
-    builder.Connect(planner.GetOutputPort("r_rd_rdd"), r_rd_rdd_demux.get_input_port())
-    builder.Connect(r_rd_rdd_demux.get_output_port(0), controller.GetInputPort("r"))
-    builder.Connect(r_rd_rdd_demux.get_output_port(1), controller.GetInputPort("rd"))
-    builder.Connect(r_rd_rdd_demux.get_output_port(2), controller.GetInputPort("rdd"))
-    # TODO: Properly interpolate r, rd, rdd
+    ''' Connect interpolator to controller '''
+    # TODO
 
     ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
     ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
