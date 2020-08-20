@@ -85,6 +85,18 @@ def calcTrajectory(q_init, q_final):
     upright_context = plant.CreateDefaultContext()
     q_nom = plant.GetPositions(upright_context)
 
+    def get_contact_positions(q):
+        context = plant_autodiff.CreateDefaultContext()
+        plant_autodiff.SetPositions(context, q[k])
+        plant_autodiff.SetVelocities(context, v[k])
+        lfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
+                context, plant_autodiff.GetFrameByName("l_foot"),
+                lfoot_full_contact_points, plant_autodiff.world_frame())
+        rfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
+                context, plant_autodiff.GetFrameByName("r_foot"),
+                rfoot_full_contact_points, plant_autodiff.world_frame())
+        return np.concatenate([lfoot_full_contact_points, rfoot_full_contact_points], axis=1)
+
     N = 50
     T = 10.0 # 10 seconds
 
@@ -112,19 +124,7 @@ def calcTrajectory(q_init, q_final):
     # Friction cone scale
     beta = prog.NewContinuousVariables(rows=N, cols=num_contact_points*N_d, name="beta")
 
-    autodiff_context = plant_autodiff.CreateDefaultContext()
-
     for k in range(N):
-        plant_autodiff.SetPositions(autodiff_context, q[k])
-        plant_autodiff.SetVelocities(autodiff_context, v[k])
-        lfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
-                autodiff_context, plant_autodiff.GetFrameByName("l_foot"),
-                lfoot_full_contact_points, plant_autodiff.world_frame())
-        rfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
-                autodiff_context, plant_autodiff.GetFrameByName("r_foot"),
-                rfoot_full_contact_points, plant_autodiff.world_frame())
-        contact_positions = np.concatenate([lfoot_full_contact_points, rfoot_full_contact_points], axis=1)
-
         ''' Eq(7a) '''
         g = np.array([0, 0, -9.81])
         Fj = np.reshape(F[k], (num_contact_points, 3))
@@ -138,12 +138,24 @@ def calcTrajectory(q_init, q_final):
         # TODO
 
         ''' Eq(7h) '''
-        com = plant_autodiff.CalcCenterOfMassPosition(autodiff_context)
-        prog.AddLinearConstraint(eq(r[k], com))
+        def eq7h(q_r):
+            q, r = np.split(plant.num_positions())
+            context = plant_autodiff.CreateDefaultContext()
+            plant_autodiff.SetPositions(context, q)
+            plant_autodiff.SetVelocities(context, v)
+            return plant_autodiff.CalcCenterOfMassPosition(context) - r
+        # COM position has dimension 3
+        prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], r[k]]))
         ''' Eq(7i) '''
-        prog.AddLinearConstraint(eq(cj, contact_positions))
+        def eq7i(q_ck):
+            q, ck = np.split(q_ck, plant.num_positions())
+            cj = np.reshape(ck, (num_contact_points, 3))
+            contact_positions = get_contact_positions(q)
+            return (contact_positions - cj).flatten()
+        # np.concatenate cannot work q, cj since they have different dimensions
+        prog.AddConstraint(eq7i, lb=np.zeros(cj.shape).flatten(), ub=np.zeros(cj.shape).flatten(), vars=np.concatenate([q[k], c[k]]))
         ''' Eq(7j) '''
-        ''' We let the contact points be wherever it wants for now... '''
+        ''' We don't constrain the contact point positions for now... '''
 
         ''' Eq(7k) '''
         ''' Constrain admissible posture '''
@@ -162,14 +174,23 @@ def calcTrajectory(q_init, q_final):
             prog.AddLinearConstraint(eq(tauj[i], np.array([0.0, 0.0, 0.0])))
 
         ''' Assume flat ground for now... '''
+        def get_contact_positions_z(q):
+            return get_contact_positions(q)[2,:]
         ''' Eq(8a) '''
-        contact_positions_z = contact_positions[2,:]
-        prog.AddConstraint(Fj[:,2].dot(contact_positions_z) == 0.0)
+        def eq8a_lhs(q_F):
+            q, F = np.split(q_F, plant.num_positions())
+            Fj = np.reshape(F, (num_contact_points, 3))
+            return Fj[:,2].dot(get_contact_positions_z(q))
+        prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], F[k]]))
         ''' Eq(8b) '''
-        prog.AddConstraint(tauj.dot(tauj).dot(contact_positions_z) == 0)
+        def eq8b_lhs(q_tau):
+            q, tau = np.split(q_tau, plant.num_positions())
+            tauj = np.reshape(tau, (num_contact_points, 3))
+            return tauj.dot(tauj).dot(get_contact_positions_z(q))
+        prog.AddConstraint(eq8b_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], tau[k]]))
         ''' Eq(8c) '''
         prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-        prog.AddLinearConstraint(ge(contact_position_z, 0.0))
+        prog.AddConstraint(get_contact_positions_z, lb=0.0, vars=q)
 
     for k in range(1, N):
         ''' Eq(7d) '''
