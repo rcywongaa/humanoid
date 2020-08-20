@@ -9,7 +9,7 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF, M
-from pydrake.all import eq, le, ge
+from pydrake.all import eq, le, ge, PiecewisePolynomial, PiecewiseCubicTrajectory, CubicHermite
 from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph
 from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
 from pydrake.systems.analysis import Simulator
@@ -37,6 +37,44 @@ v = np.zeros((N_d, num_contact_points, N_f))
 for i in range(N_d):
     for j in range(num_contact_points):
         v[i,j] = (n+mu*d)[:,i]
+
+class Interpolator(LeafSystem):
+    def __init__(self, r_traj, rd_traj, rdd_traj, dt_traj):
+        LeafSystem.__init__(self)
+        self.input_t_idx = self.DeclareVectorInputPort("t", BasicVector(1)).get_index()
+        self.output_r_idx = self.DeclareVectorOutputPort("r", BasicVector(3), self.get_r).get_index()
+        self.output_rd_idx = self.DeclareVectorOutputPort("rd", BasicVector(3), self.get_rd).get_index()
+        self.output_rdd_idx = self.DeclareVectorOutputPort("rdd", BasicVector(3), self.get_rdd).get_index()
+        self.trajectory_polynomial = PiecewisePolynomial()
+        t = 0.0
+        for i in range(len(r_traj)-1):
+            # CubicHermite assumes samples are column vectors
+            r = np.reshape(r_traj[i], (3,1))
+            rd = np.reshape(rd_traj[i], (3,1))
+            rdd = np.reshape(rdd_traj[i], (3,1))
+            dt = np.reshape(dt_traj[i+1], (3,1))
+            r_next = np.reshape(r_traj[i+1], (3,1))
+            rd_next = np.reshape(rd_traj[i+1], (3,1))
+            rdd_next = np.reshape(rdd_traj[i+1], (3,1))
+            self.trajectory_polynomial.ConcatenateInTime(
+                    CubicHermite(
+                        breaks=[t, t+dt],
+                        samples=np.hstack([r, r_next],
+                        sample_dot=[rd, rd_next])))
+            t += dt
+        self.trajectory = PiecewiseCubicTrajectory(self.trajectory_polynomial)
+
+    def get_r(self, context, output):
+        t = self.EvalVectorInput(context, self.input_t_idx).get_value()
+        output.SetFromVector(self.trajectory.get_position(t))
+
+    def get_rd(self, context, output):
+        t = self.EvalVectorInput(context, self.input_t_idx).get_value()
+        output.SetFromVector(self.trajectory.get_velocity(t))
+
+    def get_rdd(self, context, output):
+        t = self.EvalVectorInput(context, self.input_t_idx).get_value()
+        output.SetFromVector(self.trajectory.get_acceleration(t))
 
 def calcTrajectory(q_init, q_final):
     plant = MultibodyPlant(mbp_time_step)
@@ -194,6 +232,12 @@ def main():
     load_atlas(plant, add_ground=True)
     plant_context = plant.CreateDefaultContext()
 
+    q_init = plant.getPositions(plant_context)
+    q_final = q_init
+    q_final[4] = 4 # x position of pelvis
+
+    r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final)
+
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
     controller.set_name("HumanoidController")
 
@@ -201,8 +245,12 @@ def main():
     builder.Connect(plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), plant.get_actuation_input_port())
 
+    interpolator = builder.AddSystem(Interpolator(r_traj, rd_traj, rdd_traj, kt_traj))
+    interpolator.set_name("Interpolator")
     ''' Connect interpolator to controller '''
-    # TODO
+    builder.Connect(interpolator.GetOutputPort("r"), controller.GetInputPort("r"))
+    builder.Connect(interpolator.GetOutputPort("rd"), controller.GetInputPort("rd"))
+    builder.Connect(interpolator.GetOutputPort("rdd"), controller.GetInputPort("rdd"))
 
     ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
     ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
