@@ -35,10 +35,11 @@ d = np.array([
     [1.0, -1.0, 0.0, 0.0],
     [0.0, 0.0, 1.0, -1.0],
     [0.0, 0.0, 0.0, 0.0]])
-v = np.zeros((N_d, num_contact_points, N_f))
+# Equivalent to v in balance.py
+friction_cone_components = np.zeros((N_d, num_contact_points, N_f))
 for i in range(N_d):
     for j in range(num_contact_points):
-        v[i,j] = (n+mu*d)[:,i]
+        friction_cone_components[i,j] = (n+mu*d)[:,i]
 
 class Interpolator(LeafSystem):
     def __init__(self, r_traj, rd_traj, rdd_traj, dt_traj):
@@ -167,7 +168,7 @@ def calcTrajectory(q_init, q_final):
         ''' Constrain forces within friction cone '''
         beta_k = np.reshape(beta[k], (num_contact_points, N_d))
         for i in range(num_contact_points):
-            beta_v = beta_k[i].dot(v[:,i,:])
+            beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
             prog.AddLinearConstraint(eq(Fj[i], beta_v))
         ''' Constrain torques - assume no torque allowed for now '''
         for i in range(num_contact_points):
