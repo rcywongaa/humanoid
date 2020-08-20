@@ -17,9 +17,10 @@ from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
 from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
 from pydrake.systems.framework import BasicVector, LeafSystem
-from utility import calcPoseError
+from utility import calcPoseError_Expression
 from balance import HumanoidController
 import numpy as np
+import pdb
 
 mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
@@ -234,7 +235,8 @@ def calcTrajectory(q_init, q_final):
     Q_q = 0.1 * np.identity(plant.num_velocities())
     Q_v = 0.2 * np.identity(plant.num_velocities())
     for k in range(N):
-        q_err = calcPoseError(q[k], q_nom)
+        # TODO: Convert this to polynomial expression
+        q_err = calcPoseError_Expression(q[k], q_nom)
         prog.AddCost(dt[k]*(
                 q_err.dot(Q_q).dot(q_err)
                 + v[k].dot(Q_v).dot(v[k])
