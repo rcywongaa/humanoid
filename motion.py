@@ -197,11 +197,11 @@ def calcTrajectory(q_init, q_final):
         ''' Eq(7d) '''
         prog.AddLinearConstraint(eq(q[k] - q[k-1], v[k]*dt[k]))
         ''' Eq(7e) '''
-        prog.AddLinearConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
+        prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
         ''' Eq(7f) '''
-        prog.AddLinearConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
+        prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
         ''' Eq(7g) '''
-        prog.AddLinearConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
+        prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
 
         Fj = np.reshape(F[k], (num_contact_points, 3))
         cj = np.reshape(c[k], (num_contact_points, 3))
