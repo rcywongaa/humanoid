@@ -191,7 +191,7 @@ def calcTrajectory(q_init, q_final):
         prog.AddConstraint(eq8b_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], tau[k]]))
         ''' Eq(8c) '''
         prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-        prog.AddConstraint(get_contact_positions_z, lb=0.0, vars=q)
+        prog.AddConstraint(get_contact_positions_z, lb=[0.0], ub=[float('inf')], vars=q[k])
 
     for k in range(1, N):
         ''' Eq(7d) '''
