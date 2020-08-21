@@ -12,7 +12,6 @@ Convert to time-varying y_desired and z_com
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from load_atlas import g, JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
-from utility import calcPoseError, normalize
 import numpy as np
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
@@ -39,6 +38,9 @@ eta_max = 0.2
 
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
+
+def normalize(q):
+    return q / np.linalg.norm(q)
 
 class HumanoidController(LeafSystem):
     '''
@@ -241,7 +243,7 @@ class HumanoidController(LeafSystem):
         qd = self.plant.GetVelocities(plant_context)
 
         # Convert q, q_nom to generalized velocities form
-        q_err = calcPoseError(q, self.q_nom)
+        q_err = self.plant.MapQDotToVelocity(plant_context, q-self.q_nom)
         print(f"Pelvis error: {q_err[0:3]}")
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position

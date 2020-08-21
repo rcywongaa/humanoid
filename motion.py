@@ -17,7 +17,6 @@ from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
 from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
 from pydrake.systems.framework import BasicVector, LeafSystem
-from utility import calcPoseError_Expression
 from balance import HumanoidController
 import numpy as np
 import pdb
@@ -235,8 +234,7 @@ def calcTrajectory(q_init, q_final):
     Q_q = 0.1 * np.identity(plant.num_velocities())
     Q_v = 0.2 * np.identity(plant.num_velocities())
     for k in range(N):
-        # TODO: Convert this to polynomial expression
-        q_err = calcPoseError_Expression(q[k], q_nom)
+        q_err = plant.MapQDotToVelocity(plant.CreateDefaultContext(), q[k]-q_nom)
         prog.AddCost(dt[k]*(
                 q_err.dot(Q_q).dot(q_err)
                 + v[k].dot(Q_v).dot(v[k])
