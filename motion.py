@@ -141,7 +141,7 @@ def calcTrajectory(q_init, q_final):
 
         ''' Eq(7h) '''
         def eq7h(q_r):
-            q, r = np.split(plant.num_positions())
+            q, r = np.split(q_r, [plant.num_positions()])
             context = plant_autodiff.CreateDefaultContext()
             plant_autodiff.SetPositions(context, q)
             plant_autodiff.SetVelocities(context, v)
@@ -150,7 +150,7 @@ def calcTrajectory(q_init, q_final):
         prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], r[k]]))
         ''' Eq(7i) '''
         def eq7i(q_ck):
-            q, ck = np.split(q_ck, plant.num_positions())
+            q, ck = np.split(q_ck, [plant.num_positions()])
             cj = np.reshape(ck, (num_contact_points, 3))
             contact_positions = get_contact_positions(q)
             return (contact_positions - cj).flatten()
@@ -180,13 +180,13 @@ def calcTrajectory(q_init, q_final):
             return get_contact_positions(q)[2,:]
         ''' Eq(8a) '''
         def eq8a_lhs(q_F):
-            q, F = np.split(q_F, plant.num_positions())
+            q, F = np.split(q_F, [plant.num_positions()])
             Fj = np.reshape(F, (num_contact_points, 3))
             return Fj[:,2].dot(get_contact_positions_z(q))
         prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], F[k]]))
         ''' Eq(8b) '''
         def eq8b_lhs(q_tau):
-            q, tau = np.split(q_tau, plant.num_positions())
+            q, tau = np.split(q_tau, [plant.num_positions()])
             tauj = np.reshape(tau, (num_contact_points, 3))
             return tauj.dot(tauj).dot(get_contact_positions_z(q))
         prog.AddConstraint(eq8b_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], tau[k]]))
@@ -197,7 +197,7 @@ def calcTrajectory(q_init, q_final):
     for k in range(1, N):
         ''' Eq(7d) '''
         def eq7d(q_qprev_v_dt):
-            q, qprev, v, dt = np.split([
+            q, qprev, v, dt = np.split(q_qprev_v_dt, [
                 plant.num_positions(),
                 plant.num_positions(),
                 plant.num_velocities()])
