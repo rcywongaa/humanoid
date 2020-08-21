@@ -96,7 +96,7 @@ def calcTrajectory(q_init, q_final):
         rfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
                 context, plant_autodiff.GetFrameByName("r_foot"),
                 rfoot_full_contact_points, plant_autodiff.world_frame())
-        return np.concatenate([lfoot_full_contact_points, rfoot_full_contact_points], axis=1)
+        return np.concatenate([lfoot_full_contact_positions, rfoot_full_contact_positions], axis=1)
 
     N = 50
     T = 10.0 # 10 seconds
@@ -180,17 +180,17 @@ def calcTrajectory(q_init, q_final):
         def eq8a_lhs(q_F):
             q, F = np.split(q_F, [plant.num_positions()])
             Fj = np.reshape(F, (num_contact_points, 3))
-            return Fj[:,2].dot(get_contact_positions_z(q))
+            return [Fj[:,2].dot(get_contact_positions_z(q))] # Constraint functions must output vectors
         prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], F[k]]))
         ''' Eq(8b) '''
         def eq8b_lhs(q_tau):
             q, tau = np.split(q_tau, [plant.num_positions()])
             tauj = np.reshape(tau, (num_contact_points, 3))
-            return tauj.dot(tauj).dot(get_contact_positions_z(q))
-        prog.AddConstraint(eq8b_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], tau[k]]))
+            return (tauj**2).T.dot(get_contact_positions_z(q)) # Outputs per axis sum of torques of all contact points
+        prog.AddConstraint(eq8b_lhs, lb=[0.0]*3, ub=[0.0]*3, vars=np.concatenate([q[k], tau[k]]))
         ''' Eq(8c) '''
         prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-        prog.AddConstraint(get_contact_positions_z, lb=[0.0], ub=[float('inf')], vars=q[k])
+        prog.AddConstraint(get_contact_positions_z, lb=[0.0]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=q[k])
 
     for k in range(1, N):
         ''' Eq(7d) '''
