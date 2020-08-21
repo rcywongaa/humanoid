@@ -195,25 +195,38 @@ def calcTrajectory(q_init, q_final):
 
     for k in range(1, N):
         ''' Eq(7d) '''
-        '''
-        Constrain rotation
-        Taken from Practical Methods for Optimal Control and Estimation by ...
-        Section 6.8 Reorientation of an Asymmetric Rigid Body
-        '''
-        q1 = q[k,0]
-        q2 = q[k,1]
-        q3 = q[k,2]
-        q4 = q[k,3]
-        w1 = v[k,0]
-        w2 = v[k,1]
-        w3 = v[k,2]
-        # Not sure why reshape is necessary
-        prog.AddConstraint(eq(q[k,0] - q[k-1,0], 0.5*(w1*q4 - w2*q3 + w3*q2)).reshape((1,)))
-        prog.AddConstraint(eq(q[k,1] - q[k-1,1], 0.5*(w1*q3 + w2*q4 - w3*q1)).reshape((1,)))
-        prog.AddConstraint(eq(q[k,2] - q[k-1,2], 0.5*(-w1*q2 + w2*q1 + w3*q4)).reshape((1,)))
-        prog.AddConstraint(eq(q[k,3] - q[k-1,3], 0.5*(-w1*q1 - w2*q2 - w3*q3)).reshape((1,)))
-        ''' Constrain other positions '''
-        prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
+        def eq7d(q_qprev_v_dt):
+            q, qprev, v, dt = np.split([
+                plant.num_positions(),
+                plant.num_positions(),
+                plant.num_velocities()])
+            context = plant_autodiff.CreateDefaultContext()
+            qd = plant_autodiff.MapVelocityToQDot(context, v*dt)
+            return q - qprev - qd
+        prog.AddConstraint(eq7d, lb=[0.0], ub=[0.0],
+                vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]])) # dt[k] must be converted to an array
+
+        # Deprecated
+        # '''
+        # Constrain rotation
+        # Taken from Practical Methods for Optimal Control and Estimation by ...
+        # Section 6.8 Reorientation of an Asymmetric Rigid Body
+        # '''
+        # q1 = q[k,0]
+        # q2 = q[k,1]
+        # q3 = q[k,2]
+        # q4 = q[k,3]
+        # w1 = v[k,0]*dt[k]
+        # w2 = v[k,1]*dt[k]
+        # w3 = v[k,2]*dt[k]
+        # # Not sure why reshape is necessary
+        # prog.AddConstraint(eq(q[k,0] - q[k-1,0], 0.5*(w1*q4 - w2*q3 + w3*q2)).reshape((1,)))
+        # prog.AddConstraint(eq(q[k,1] - q[k-1,1], 0.5*(w1*q3 + w2*q4 - w3*q1)).reshape((1,)))
+        # prog.AddConstraint(eq(q[k,2] - q[k-1,2], 0.5*(-w1*q2 + w2*q1 + w3*q4)).reshape((1,)))
+        # prog.AddConstraint(eq(q[k,3] - q[k-1,3], 0.5*(-w1*q1 - w2*q2 - w3*q3)).reshape((1,)))
+        # ''' Constrain other positions '''
+        # prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
+
         ''' Eq(7e) '''
         prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
         ''' Eq(7f) '''
