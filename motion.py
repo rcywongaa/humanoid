@@ -251,7 +251,7 @@ def calcTrajectory(q_init, q_final):
         def pose_error_cost(q_dt):
             q, dt = np.split(q_dt, [plant_autodiff.num_positions()])
             q_err = plant_autodiff.MapQDotToVelocity(plant_autodiff.CreateDefaultContext(), q-q_nom)
-            return dt*(q_err.dot(Q_q).dot(q_err))
+            return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
         prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], [dt[k]]]))
         prog.AddCost(dt[k]*(
                 + v[k].dot(Q_v).dot(v[k])
