@@ -19,6 +19,7 @@ from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
 from pydrake.systems.framework import BasicVector, LeafSystem
 from balance import HumanoidController
 import numpy as np
+import time
 import pdb
 
 mbp_time_step = 1.0e-3
