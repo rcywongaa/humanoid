@@ -247,9 +247,12 @@ def calcTrajectory(q_init, q_final):
     Q_q = 0.1 * np.identity(plant.num_velocities())
     Q_v = 0.2 * np.identity(plant.num_velocities())
     for k in range(N):
-        q_err = plant.MapQDotToVelocity(plant.CreateDefaultContext(), q[k]-q_nom)
+        def pose_error_cost(q_dt):
+            q, dt = np.split(q_dt, [plant_autodiff.num_positions()])
+            q_err = plant_autodiff.MapQDotToVelocity(plant_autodiff.CreateDefaultContext(), q-q_nom)
+            return dt*(q_err.dot(Q_q).dot(q_err))
+        prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], [dt[k]]]))
         prog.AddCost(dt[k]*(
-                q_err.dot(Q_q).dot(q_err)
                 + v[k].dot(Q_v).dot(v[k])
                 + rdd[k].dot(rdd[k])))
 
