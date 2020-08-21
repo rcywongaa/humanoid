@@ -26,7 +26,7 @@ mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
-num_contact_points = lfoot_full_contact_points.shape[0]+rfoot_full_contact_points.shape[0]
+num_contact_points = lfoot_full_contact_points.shape[1]+rfoot_full_contact_points.shape[1]
 mu = 1.0 # Coefficient of friction, same as in load_atlas.py
 n = np.array([
     [0],
@@ -89,8 +89,7 @@ def calcTrajectory(q_init, q_final):
 
     def get_contact_positions(q):
         context = plant_autodiff.CreateDefaultContext()
-        plant_autodiff.SetPositions(context, q[k])
-        plant_autodiff.SetVelocities(context, v[k])
+        plant_autodiff.SetPositions(context, q)
         lfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
                 context, plant_autodiff.GetFrameByName("l_foot"),
                 lfoot_full_contact_points, plant_autodiff.world_frame())
@@ -144,7 +143,6 @@ def calcTrajectory(q_init, q_final):
             q, r = np.split(q_r, [plant.num_positions()])
             context = plant_autodiff.CreateDefaultContext()
             plant_autodiff.SetPositions(context, q)
-            plant_autodiff.SetVelocities(context, v)
             return plant_autodiff.CalcCenterOfMassPosition(context) - r
         # COM position has dimension 3
         prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], r[k]]))
@@ -152,7 +150,7 @@ def calcTrajectory(q_init, q_final):
         def eq7i(q_ck):
             q, ck = np.split(q_ck, [plant.num_positions()])
             cj = np.reshape(ck, (num_contact_points, 3))
-            contact_positions = get_contact_positions(q)
+            contact_positions = get_contact_positions(q).T
             return (contact_positions - cj).flatten()
         # np.concatenate cannot work q, cj since they have different dimensions
         prog.AddConstraint(eq7i, lb=np.zeros(cj.shape).flatten(), ub=np.zeros(cj.shape).flatten(), vars=np.concatenate([q[k], c[k]]))
