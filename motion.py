@@ -269,6 +269,7 @@ def calcTrajectory(q_init, q_final):
 
     ''' Solve '''
     start_solve_time = time.time()
+    print(f"Start solving...")
     result = Solve(prog)
     print(f"Solve time: {time.time() - start_solve_time}s")
     if not result.is_success():
