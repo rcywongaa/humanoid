@@ -266,7 +266,7 @@ def calcTrajectory(q_init, q_final):
     ''' Constrain final velocity '''
     prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain time taken '''
-    prog.AddLinearConstraint(le(np.sum(dt), T))
+    prog.AddLinearConstraint(np.sum(dt) <= T)
 
     ''' Solve '''
     start_solve_time = time.time()
