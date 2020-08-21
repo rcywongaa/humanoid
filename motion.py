@@ -197,12 +197,12 @@ def calcTrajectory(q_init, q_final):
         def eq7d(q_qprev_v_dt):
             q, qprev, v, dt = np.split(q_qprev_v_dt, [
                 plant.num_positions(),
-                plant.num_positions(),
-                plant.num_velocities()])
+                plant.num_positions() + plant.num_positions(),
+                plant.num_positions() + plant.num_positions() + plant.num_velocities()])
             context = plant_autodiff.CreateDefaultContext()
-            qd = plant_autodiff.MapVelocityToQDot(context, v*dt)
+            qd = plant_autodiff.MapVelocityToQDot(context, v*dt[0])
             return q - qprev - qd
-        prog.AddConstraint(eq7d, lb=[0.0], ub=[0.0],
+        prog.AddConstraint(eq7d, lb=[0.0]*plant.num_positions(), ub=[0.0]*plant.num_positions(),
                 vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]])) # dt[k] must be converted to an array
 
         # Deprecated
