@@ -98,7 +98,7 @@ def calcTrajectory(q_init, q_final):
                 rfoot_full_contact_points, plant_autodiff.world_frame())
         return np.concatenate([lfoot_full_contact_positions, rfoot_full_contact_positions], axis=1)
 
-    N = 50
+    N = 50 # 50 knot points
     T = 10.0 # 10 seconds
 
     sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(plant)])
@@ -143,12 +143,14 @@ def calcTrajectory(q_init, q_final):
             q, r = np.split(q_r, [plant.num_positions()])
             context = plant_autodiff.CreateDefaultContext()
             plant_autodiff.SetPositions(context, q)
+            # TODO: Maybe we also need to set velocity??
             return plant_autodiff.CalcCenterOfMassPosition(context) - r
         # COM position has dimension 3
         prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], r[k]]))
         ''' Eq(7i) '''
         def eq7i(q_ck):
             q, ck = np.split(q_ck, [plant.num_positions()])
+            # TODO: Maybe we also need to set velocity??
             cj = np.reshape(ck, (num_contact_points, 3))
             contact_positions = get_contact_positions(q).T
             return (contact_positions - cj).flatten()
@@ -170,6 +172,7 @@ def calcTrajectory(q_init, q_final):
             beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
             prog.AddLinearConstraint(eq(Fj[i], beta_v))
         ''' Constrain torques - assume no torque allowed for now '''
+        # TODO: This looks suspicious
         for i in range(num_contact_points):
             prog.AddLinearConstraint(eq(tauj[i], np.array([0.0, 0.0, 0.0])))
 
@@ -181,17 +184,17 @@ def calcTrajectory(q_init, q_final):
             q, F = np.split(q_F, [plant.num_positions()])
             Fj = np.reshape(F, (num_contact_points, 3))
             return [Fj[:,2].dot(get_contact_positions_z(q))] # Constraint functions must output vectors
-        prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], F[k]]))
+        # prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], F[k]]))
         ''' Eq(8b) '''
         def eq8b_lhs(q_tau):
             q, tau = np.split(q_tau, [plant.num_positions()])
             tauj = np.reshape(tau, (num_contact_points, 3))
             return (tauj**2).T.dot(get_contact_positions_z(q)) # Outputs per axis sum of torques of all contact points
-        prog.AddConstraint(eq8b_lhs, lb=[0.0]*3, ub=[0.0]*3, vars=np.concatenate([q[k], tau[k]]))
+        # prog.AddConstraint(eq8b_lhs, lb=[0.0]*3, ub=[0.0]*3, vars=np.concatenate([q[k], tau[k]]))
         ''' Eq(8c) '''
-        prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
+        # prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
         # TODO: Fix infeasible constraint
-        prog.AddConstraint(get_contact_positions_z, lb=[0.0]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=q[k])
+        # prog.AddConstraint(get_contact_positions_z, lb=[0.0]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=q[k])
 
     for k in range(1, N):
         ''' Eq(7d) '''
@@ -240,9 +243,9 @@ def calcTrajectory(q_init, q_final):
         for i in range(num_contact_points):
             ''' Assume flat ground for now... '''
             ''' Eq(9a) '''
-            prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) == 0.0)
+            # prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) == 0.0)
             ''' Eq(9b) '''
-            prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) == 0.0)
+            # prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) == 0.0)
     ''' Eq(10) '''
     Q_q = 0.1 * np.identity(plant.num_velocities())
     Q_v = 0.2 * np.identity(plant.num_velocities())
