@@ -178,10 +178,12 @@ def calcTrajectory(q_init, q_final):
         ''' Constrain beta positive '''
         for b in beta.flat:
             prog.AddLinearConstraint(b >= 0.0)
-        ''' Constrain torques - assume no torque allowed for now '''
-        # TODO: This looks suspicious
+        ''' Constrain torques - assume torque linear to friction cone'''
+        friction_torque_coefficient = 0.1
         for i in range(num_contact_points):
-            prog.AddLinearConstraint(eq(tauj[i], np.array([0.0, 0.0, 0.0])))
+            max_torque = friction_torque_coefficient * np.sum(beta_k[i])
+            prog.AddLinearConstraint(le(tauj[i], np.array([0.0, 0.0, max_torque])))
+            prog.AddLinearConstraint(ge(tauj[i], np.array([0.0, 0.0, -max_torque])))
 
         ''' Assume flat ground for now... '''
         def get_contact_positions_z(q, v):
