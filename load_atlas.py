@@ -108,6 +108,13 @@ FLOATING_BASE_DOF = 6
 FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions
 NUM_ACTUATED_DOF = 30
 TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
+POS_QW_IDX = 0
+POS_QX_IDX = 1
+POS_QY_IDX = 2
+POS_QZ_IDX = 3
+POS_X_IDX = 4
+POS_Y_IDX = 5
+POS_Z_IDX = 6
 
 # plant is modified in place
 def load_atlas(plant, add_ground=False):
