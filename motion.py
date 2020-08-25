@@ -171,6 +171,9 @@ def calcTrajectory(q_init, q_final):
         for i in range(num_contact_points):
             beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
             prog.AddLinearConstraint(eq(Fj[i], beta_v))
+        ''' Constrain beta positive '''
+        for b in beta.flat:
+            prog.AddLinearConstraint(b >= 0.0)
         ''' Constrain torques - assume no torque allowed for now '''
         # TODO: This looks suspicious
         for i in range(num_contact_points):
