@@ -99,8 +99,8 @@ def calcTrajectory(q_init, q_final):
                 rfoot_full_contact_points, plant_autodiff.world_frame())
         return np.concatenate([lfoot_full_contact_positions, rfoot_full_contact_positions], axis=1)
 
-    N = 50 # 50 knot points
-    T = 10.0 # 10 seconds
+    N = 100 # 150 knot points
+    T = 5.0 # 5 seconds
 
     sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(plant)])
     sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(plant)])
@@ -307,7 +307,8 @@ def main():
 
     q_init = plant.GetPositions(plant_context)
     q_final = q_init
-    q_final[4] = 4 # x position of pelvis
+    q_final[4] = 0 # x position of pelvis
+    q_final[6] -= 0.10 # z position of pelvis (to make sure final pose touches ground)
 
     r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final)
 
