@@ -80,7 +80,7 @@ class Interpolator(LeafSystem):
         t = self.EvalVectorInput(context, self.input_t_idx).get_value()
         output.SetFromVector(self.trajectory.get_acceleration(t))
 
-def calcTrajectory(q_init, q_final):
+def calcTrajectory(q_init, q_final, pelvis_only=False):
     plant = MultibodyPlant(mbp_time_step)
     load_atlas(plant)
     plant_autodiff = plant.ToAutoDiffXd()
@@ -278,7 +278,10 @@ def calcTrajectory(q_init, q_final):
     ''' Constrain initial velocity '''
     prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain final pose '''
-    prog.AddLinearConstraint(eq(q[-1], q_final))
+    if pelvis_only:
+        prog.AddLinearConstraint(eq(q[-1, 0:FLOATING_BASE_QUAT_DOF], q_final[0:FLOATING_BASE_QUAT_DOF]))
+    else:
+        prog.AddLinearConstraint(eq(q[-1], q_final))
     ''' Constrain final velocity '''
     prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain time taken '''
@@ -309,10 +312,10 @@ def main():
 
     q_init = plant.GetPositions(plant_context)
     q_final = q_init
-    q_final[4] = 0 # x position of pelvis
+    # q_final[4] = 0.1 # x position of pelvis
     q_final[6] -= 0.10 # z position of pelvis (to make sure final pose touches ground)
 
-    r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final)
+    r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final, pelvis_only=True)
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
     controller.set_name("HumanoidController")
