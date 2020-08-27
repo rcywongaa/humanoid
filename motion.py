@@ -126,9 +126,9 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     # Friction cone scale
     beta = prog.NewContinuousVariables(rows=N, cols=num_contact_points*N_d, name="beta")
 
+    g = np.array([0, 0, -9.81])
     for k in range(N):
         ''' Eq(7a) '''
-        g = np.array([0, 0, -9.81])
         Fj = np.reshape(F[k], (num_contact_points, 3))
         prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g))
         ''' Eq(7b) '''
@@ -159,31 +159,31 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
             contact_positions = get_contact_positions(q, v).T
             return (contact_positions - cj).flatten()
         # np.concatenate cannot work q, cj since they have different dimensions
-        prog.AddConstraint(eq7i, lb=np.zeros(cj.shape).flatten(), ub=np.zeros(cj.shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
+        prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
         ''' Eq(7j) '''
         ''' We don't constrain the contact point positions for now... '''
 
         ''' Eq(7k) '''
         ''' Constrain admissible posture '''
-        prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_upper_limits))
-        prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_lower_limits))
+        # prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_upper_limits))
+        # prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_lower_limits))
         ''' Constrain velocities '''
-        prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], sorted_joint_velocity_limits))
-        prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -sorted_joint_velocity_limits))
+        # prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], sorted_joint_velocity_limits))
+        # prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -sorted_joint_velocity_limits))
         ''' Constrain forces within friction cone '''
-        beta_k = np.reshape(beta[k], (num_contact_points, N_d))
-        for i in range(num_contact_points):
-            beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
-            prog.AddLinearConstraint(eq(Fj[i], beta_v))
+        # beta_k = np.reshape(beta[k], (num_contact_points, N_d))
+        # for i in range(num_contact_points):
+            # beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
+            # prog.AddLinearConstraint(eq(Fj[i], beta_v))
         ''' Constrain beta positive '''
-        for b in beta.flat:
-            prog.AddLinearConstraint(b >= 0.0)
+        # for b in beta.flat:
+            # prog.AddLinearConstraint(b >= 0.0)
         ''' Constrain torques - assume torque linear to friction cone'''
-        friction_torque_coefficient = 0.1
-        for i in range(num_contact_points):
-            max_torque = friction_torque_coefficient * np.sum(beta_k[i])
-            prog.AddLinearConstraint(le(tauj[i], np.array([0.0, 0.0, max_torque])))
-            prog.AddLinearConstraint(ge(tauj[i], np.array([0.0, 0.0, -max_torque])))
+        # friction_torque_coefficient = 0.1
+        # for i in range(num_contact_points):
+            # max_torque = friction_torque_coefficient * np.sum(beta_k[i])
+            # prog.AddLinearConstraint(le(tauj[i], np.array([0.0, 0.0, max_torque])))
+            # prog.AddLinearConstraint(ge(tauj[i], np.array([0.0, 0.0, -max_torque])))
 
         ''' Assume flat ground for now... '''
         def get_contact_positions_z(q, v):
@@ -283,7 +283,7 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     else:
         prog.AddLinearConstraint(eq(q[-1], q_final))
     ''' Constrain final velocity '''
-    prog.AddLinearConstraint(eq(v[0], 0.0))
+    # prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain time taken '''
     prog.AddLinearConstraint(np.sum(dt) <= T)
 
@@ -294,7 +294,6 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     print(f"Solve time: {time.time() - start_solve_time}s")
     if not result.is_success():
         print(f"FAILED")
-        pdb.set_trace()
         exit(-1)
     print(f"Cost: {result.get_optimal_cost()}")
     r_sol = result.GetSolution(r)
