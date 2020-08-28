@@ -308,12 +308,14 @@ def main():
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
     load_atlas(plant, add_ground=True)
     plant_context = plant.CreateDefaultContext()
+    set_atlas_initial_pose(plant, plant_context)
 
     q_init = plant.GetPositions(plant_context)
-    q_final = q_init
+    q_final = q_init.copy()
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] -= 0.10 # z position of pelvis (to make sure final pose touches ground)
 
+    print(f"Starting pos: {q_init}\nfinal pos: {q_final}")
     r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final, pelvis_only=True)
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
@@ -335,7 +337,6 @@ def main():
     diagram = builder.Build()
     diagram_context = diagram.CreateDefaultContext()
     plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
-    set_atlas_initial_pose(plant, plant_context)
 
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.1)
