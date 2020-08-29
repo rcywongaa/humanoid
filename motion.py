@@ -293,10 +293,16 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     prog.AddLinearConstraint(np.sum(dt) <= T).evaluator().set_description("max time")
 
     ''' Solve '''
+    initial_guess = np.empty(prog.num_vars())
+    # Guess evenly distributed dt
+    prog.SetDecisionVariableValueInVector(dt, [T/N] * N, initial_guess)
+    # Guess q to avoid initializing with invalid quaternion
+    prog.SetDecisionVariableValueInVector(q, [q_init] * N, initial_guess)
+
     start_solve_time = time.time()
     print(f"Start solving...")
     solver = IpoptSolver()
-    result = solver.Solve(prog)
+    result = solver.Solve(prog, initial_guess)
     print(f"Solve time: {time.time() - start_solve_time}s")
     if not result.is_success():
         print(f"FAILED")
