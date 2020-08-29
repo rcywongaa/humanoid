@@ -132,11 +132,13 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     for k in range(N):
         ''' Eq(7a) '''
         Fj = np.reshape(F[k], (num_contact_points, 3))
-        prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g)).evaluator().set_description(f"Eq(7a)[{k}]")
+        (prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g))
+                .evaluator().set_description(f"Eq(7a)[{k}]"))
         ''' Eq(7b) '''
         cj = np.reshape(c[k], (num_contact_points, 3))
         tauj = np.reshape(tau[k], (num_contact_points, 3))
-        prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0))).evaluator().set_description(f"Eq(7b)[{k}]")
+        (prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
+                .evaluator().set_description(f"Eq(7b)[{k}]"))
         ''' Eq(7c) '''
         # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
         # TODO
@@ -152,17 +154,20 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
             plant_eval.SetVelocities(context, v)
             return plant_eval.CalcCenterOfMassPosition(context) - r
         # COM position has dimension 3
-        prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]])).evaluator().set_description(f"Eq(7h)[{k}]")
+        (prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
+                .evaluator().set_description(f"Eq(7h)[{k}]"))
         ''' Eq(7i) '''
         def eq7i(q_v_ck):
             q, v, ck = np.split(q_v_ck, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
             cj = np.reshape(ck, (num_contact_points, 3))
+            # print(f"q = {q}\nv={v}\nck={ck}")
             contact_positions = get_contact_positions(q, v).T
             return (contact_positions - cj).flatten()
         # np.concatenate cannot work q, cj since they have different dimensions
-        prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]])).evaluator().set_description(f"Eq(7i)[{k}]")
+        (prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
+                .evaluator().set_description(f"Eq(7i)[{k}]"))
         ''' Eq(7j) '''
         ''' We don't constrain the contact point positions for now... '''
 
@@ -223,8 +228,10 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
             context = plant_eval.CreateDefaultContext()
             qd = plant_eval.MapVelocityToQDot(context, v*dt[0])
             return q - qprev - qd
-        prog.AddConstraint(eq7d, lb=[0.0]*plant.num_positions(), ub=[0.0]*plant.num_positions(),
-                vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]])).evaluator().set_description(f"Eq(7d)[{k}]") # dt[k] must be converted to an array
+        # dt[k] must be converted to an array
+        (prog.AddConstraint(eq7d, lb=[0.0]*plant.num_positions(), ub=[0.0]*plant.num_positions(),
+                vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]]))
+            .evaluator().set_description(f"Eq(7d)[{k}]"))
 
         # Deprecated
         # '''
@@ -248,11 +255,14 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
         # prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
 
         ''' Eq(7e) '''
-        prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k])).evaluator().set_description(f"Eq(7e)[{k}]")
+        (prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
+            .evaluator().set_description(f"Eq(7e)[{k}]"))
         ''' Eq(7f) '''
-        prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k])).evaluator().set_description(f"Eq(7f)[{k}]")
+        (prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
+            .evaluator().set_description(f"Eq(7f)[{k}]"))
         ''' Eq(7g) '''
-        prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k])).evaluator().set_description(f"Eq(7g)[{k}]")
+        (prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
+            .evaluator().set_description(f"Eq(7g)[{k}]"))
 
         Fj = np.reshape(F[k], (num_contact_points, 3))
         cj = np.reshape(c[k], (num_contact_points, 3))
@@ -279,18 +289,22 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
 
     ''' Additional constraints not explicitly stated '''
     ''' Constrain initial pose '''
-    prog.AddLinearConstraint(eq(q[0], q_init)).evaluator().set_description("initial pose")
+    (prog.AddLinearConstraint(eq(q[0], q_init))
+            .evaluator().set_description("initial pose"))
     ''' Constrain initial velocity '''
     # prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain final pose '''
     if pelvis_only:
-        prog.AddLinearConstraint(eq(q[-1, 4:7], q_final[4:7])).evaluator().set_description("final pose")
+        (prog.AddLinearConstraint(eq(q[-1, 4:7], q_final[4:7]))
+                .evaluator().set_description("final pose"))
     else:
-        prog.AddLinearConstraint(eq(q[-1], q_final)).evaluator().set_description("final pose")
+        (prog.AddLinearConstraint(eq(q[-1], q_final))
+                .evaluator().set_description("final pose"))
     ''' Constrain final velocity '''
     # prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain time taken '''
-    prog.AddLinearConstraint(np.sum(dt) <= T).evaluator().set_description("max time")
+    (prog.AddLinearConstraint(np.sum(dt) <= T)
+            .evaluator().set_description("max time"))
 
     ''' Solve '''
     initial_guess = np.empty(prog.num_vars())
