@@ -91,6 +91,12 @@ In `tools/workspace/drake_visualizer/repository.bzl` set `USE_SYSTEM_VTK=OFF` an
 
 ## Resources
 
+
+### Affordable Robots
+- Thormang
+- Nao (~5.5k USD)
+- KHR-3HV (~ 2.6k USD)
+
 ### Simulation resources
 
 #### Thormang (2019)
