@@ -15,6 +15,7 @@ from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
 from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
+from pydrake.all import IpoptSolver
 from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
 from pydrake.systems.framework import BasicVector, LeafSystem
 from balance import HumanoidController
@@ -88,15 +89,16 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     q_nom = plant.GetPositions(upright_context)
 
     def get_contact_positions(q, v):
-        context = plant_autodiff.CreateDefaultContext()
-        plant_autodiff.SetPositions(context, q)
-        plant_autodiff.SetVelocities(context, v)
-        lfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
-                context, plant_autodiff.GetFrameByName("l_foot"),
-                lfoot_full_contact_points, plant_autodiff.world_frame())
-        rfoot_full_contact_positions = plant_autodiff.CalcPointsPositions(
-                context, plant_autodiff.GetFrameByName("r_foot"),
-                rfoot_full_contact_points, plant_autodiff.world_frame())
+        plant_eval = plant_autodiff if q.dtype == np.object else plant
+        context = plant_eval.CreateDefaultContext()
+        plant_eval.SetPositions(context, q)
+        plant_eval.SetVelocities(context, v)
+        lfoot_full_contact_positions = plant_eval.CalcPointsPositions(
+                context, plant_eval.GetFrameByName("l_foot"),
+                lfoot_full_contact_points, plant_eval.world_frame())
+        rfoot_full_contact_positions = plant_eval.CalcPointsPositions(
+                context, plant_eval.GetFrameByName("r_foot"),
+                rfoot_full_contact_points, plant_eval.world_frame())
         return np.concatenate([lfoot_full_contact_positions, rfoot_full_contact_positions], axis=1)
 
     N = 100 # 150 knot points
@@ -130,26 +132,27 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     for k in range(N):
         ''' Eq(7a) '''
         Fj = np.reshape(F[k], (num_contact_points, 3))
-        prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g))
+        prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g)).evaluator().set_description(f"Eq(7a)[{k}]")
         ''' Eq(7b) '''
         cj = np.reshape(c[k], (num_contact_points, 3))
         tauj = np.reshape(tau[k], (num_contact_points, 3))
-        prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
+        prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0))).evaluator().set_description(f"Eq(7b)[{k}]")
         ''' Eq(7c) '''
         # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
         # TODO
 
         ''' Eq(7h) '''
         def eq7h(q_v_r):
+            plant_eval = plant_autodiff if q_v_r.dtype == np.object else plant
             q, v, r = np.split(q_v_r, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
-            context = plant_autodiff.CreateDefaultContext()
-            plant_autodiff.SetPositions(context, q)
-            plant_autodiff.SetVelocities(context, v)
-            return plant_autodiff.CalcCenterOfMassPosition(context) - r
+            context = plant_eval.CreateDefaultContext()
+            plant_eval.SetPositions(context, q)
+            plant_eval.SetVelocities(context, v)
+            return plant_eval.CalcCenterOfMassPosition(context) - r
         # COM position has dimension 3
-        prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
+        prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]])).evaluator().set_description(f"Eq(7h)[{k}]")
         ''' Eq(7i) '''
         def eq7i(q_v_ck):
             q, v, ck = np.split(q_v_ck, [
@@ -159,7 +162,7 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
             contact_positions = get_contact_positions(q, v).T
             return (contact_positions - cj).flatten()
         # np.concatenate cannot work q, cj since they have different dimensions
-        prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
+        prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]])).evaluator().set_description(f"Eq(7i)[{k}]")
         ''' Eq(7j) '''
         ''' We don't constrain the contact point positions for now... '''
 
@@ -212,15 +215,16 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     for k in range(1, N):
         ''' Eq(7d) '''
         def eq7d(q_qprev_v_dt):
+            plant_eval = plant_autodiff if q_qprev_v_dt.dtype == np.object else plant
             q, qprev, v, dt = np.split(q_qprev_v_dt, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_positions(),
                 plant.num_positions() + plant.num_positions() + plant.num_velocities()])
-            context = plant_autodiff.CreateDefaultContext()
-            qd = plant_autodiff.MapVelocityToQDot(context, v*dt[0])
+            context = plant_eval.CreateDefaultContext()
+            qd = plant_eval.MapVelocityToQDot(context, v*dt[0])
             return q - qprev - qd
         prog.AddConstraint(eq7d, lb=[0.0]*plant.num_positions(), ub=[0.0]*plant.num_positions(),
-                vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]])) # dt[k] must be converted to an array
+                vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]])).evaluator().set_description(f"Eq(7d)[{k}]") # dt[k] must be converted to an array
 
         # Deprecated
         # '''
@@ -244,11 +248,11 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
         # prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
 
         ''' Eq(7e) '''
-        prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
+        prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k])).evaluator().set_description(f"Eq(7e)[{k}]")
         ''' Eq(7f) '''
-        prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
+        prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k])).evaluator().set_description(f"Eq(7f)[{k}]")
         ''' Eq(7g) '''
-        prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
+        prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k])).evaluator().set_description(f"Eq(7g)[{k}]")
 
         Fj = np.reshape(F[k], (num_contact_points, 3))
         cj = np.reshape(c[k], (num_contact_points, 3))
@@ -264,8 +268,9 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
     Q_v = 0.2 * np.identity(plant.num_velocities())
     for k in range(N):
         def pose_error_cost(q_dt):
-            q, dt = np.split(q_dt, [plant_autodiff.num_positions()])
-            q_err = plant_autodiff.MapQDotToVelocity(plant_autodiff.CreateDefaultContext(), q-q_nom)
+            plant_eval = plant_autodiff if q_dt.dtype == np.object else plant
+            q, dt = np.split(q_dt, [plant_eval.num_positions()])
+            q_err = plant_eval.MapQDotToVelocity(plant_eval.CreateDefaultContext(), q-q_nom)
             return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
         prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], [dt[k]]]))
         prog.AddCost(dt[k]*(
@@ -274,26 +279,29 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
 
     ''' Additional constraints not explicitly stated '''
     ''' Constrain initial pose '''
-    prog.AddLinearConstraint(eq(q[0], q_init))
+    prog.AddLinearConstraint(eq(q[0], q_init)).evaluator().set_description("initial pose")
     ''' Constrain initial velocity '''
-    prog.AddLinearConstraint(eq(v[0], 0.0))
+    # prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain final pose '''
     if pelvis_only:
-        prog.AddLinearConstraint(eq(q[-1, 0:FLOATING_BASE_QUAT_DOF], q_final[0:FLOATING_BASE_QUAT_DOF]))
+        prog.AddLinearConstraint(eq(q[-1, 4:7], q_final[4:7])).evaluator().set_description("final pose")
     else:
-        prog.AddLinearConstraint(eq(q[-1], q_final))
+        prog.AddLinearConstraint(eq(q[-1], q_final)).evaluator().set_description("final pose")
     ''' Constrain final velocity '''
     # prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain time taken '''
-    prog.AddLinearConstraint(np.sum(dt) <= T)
+    prog.AddLinearConstraint(np.sum(dt) <= T).evaluator().set_description("max time")
 
     ''' Solve '''
     start_solve_time = time.time()
     print(f"Start solving...")
-    result = Solve(prog)
+    solver = IpoptSolver()
+    result = solver.Solve(prog)
     print(f"Solve time: {time.time() - start_solve_time}s")
     if not result.is_success():
         print(f"FAILED")
+        print(result.GetInfeasibleConstraintNames(prog))
+        pdb.set_trace()
         exit(-1)
     print(f"Cost: {result.get_optimal_cost()}")
     r_sol = result.GetSolution(r)
@@ -315,7 +323,7 @@ def main():
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] -= 0.10 # z position of pelvis (to make sure final pose touches ground)
 
-    print(f"Starting pos: {q_init}\nfinal pos: {q_final}")
+    print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
     r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final, pelvis_only=True)
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
