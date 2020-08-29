@@ -190,7 +190,7 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
             return get_contact_positions(q, v)[2,:]
         ''' Eq(8a) '''
         def eq8a_lhs(q_v_F):
-            q, v, F = np.split(q_F, [
+            q, v, F = np.split(q_v_F, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
             Fj = np.reshape(F, (num_contact_points, 3))
@@ -198,7 +198,7 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
         # prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], v[k], F[k]]))
         ''' Eq(8b) '''
         def eq8b_lhs(q_v_tau):
-            q, v, tau = np.split(q_tau, [
+            q, v, tau = np.split(q_v_tau, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
             tauj = np.reshape(tau, (num_contact_points, 3))
