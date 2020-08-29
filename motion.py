@@ -311,11 +311,13 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     prog.SetDecisionVariableValueInVector(dt, [T/N] * N, initial_guess)
     # Guess q to avoid initializing with invalid quaternion
     prog.SetDecisionVariableValueInVector(q, [q_init] * N, initial_guess)
+    # TODO: Linear interpolate q, taking care of quaternion
+    # TODO: Guess v based on interpolation
 
     start_solve_time = time.time()
     print(f"Start solving...")
     solver = IpoptSolver()
-    result = solver.Solve(prog, initial_guess)
+    result = solver.Solve(prog, initial_guess) # Currently takes around 15 mins
     print(f"Solve time: {time.time() - start_solve_time}s")
     if not result.is_success():
         print(f"FAILED")
