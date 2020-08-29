@@ -81,7 +81,9 @@ class Interpolator(LeafSystem):
         t = self.EvalVectorInput(context, self.input_t_idx).get_value()
         output.SetFromVector(self.trajectory.get_acceleration(t))
 
-def calcTrajectory(q_init, q_final, pelvis_only=False):
+def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False):
+    N = num_knot_points
+    T = max_time
     plant = MultibodyPlant(mbp_time_step)
     load_atlas(plant)
     plant_autodiff = plant.ToAutoDiffXd()
@@ -100,9 +102,6 @@ def calcTrajectory(q_init, q_final, pelvis_only=False):
                 context, plant_eval.GetFrameByName("r_foot"),
                 rfoot_full_contact_points, plant_eval.world_frame())
         return np.concatenate([lfoot_full_contact_positions, rfoot_full_contact_positions], axis=1)
-
-    N = 100 # 150 knot points
-    T = 5.0 # 5 seconds
 
     sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(plant)])
     sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(plant)])
@@ -342,9 +341,11 @@ def main():
     q_final = q_init.copy()
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] -= 0.10 # z position of pelvis (to make sure final pose touches ground)
+    num_knot_points = 100
+    max_time = 2.0
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
-    r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final, pelvis_only=True)
+    r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
     controller.set_name("HumanoidController")
