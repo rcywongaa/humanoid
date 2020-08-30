@@ -342,9 +342,10 @@ def main():
     q_init = plant.GetPositions(plant_context)
     q_final = q_init.copy()
     # q_final[4] = 0.1 # x position of pelvis
-    q_final[6] -= 0.10 # z position of pelvis (to make sure final pose touches ground)
+    q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
+
     num_knot_points = 100
-    max_time = 2.0
+    max_time = 1.0
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
     r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
