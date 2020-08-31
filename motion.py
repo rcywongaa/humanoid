@@ -172,8 +172,10 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
 
         ''' Eq(7k) '''
         ''' Constrain admissible posture '''
-        # prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_upper_limits))
-        # prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_lower_limits))
+        (prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_upper_limits))
+                .evaluator().set_description(f"Eq(7k)[{k}] joint position upper limit"))
+        (prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_lower_limits))
+                .evaluator().set_description(f"Eq(7k)[{k}] joint position lower limit"))
         ''' Constrain velocities '''
         # prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], sorted_joint_velocity_limits))
         # prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -sorted_joint_velocity_limits))
@@ -304,6 +306,11 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     ''' Constrain time taken '''
     (prog.AddLinearConstraint(np.sum(dt) <= T)
             .evaluator().set_description("max time"))
+    ''' Constrain time step '''
+    (prog.AddLinearConstraint(ge(dt, [1e-5]*N))
+            .evaluator().set_description("min timestep"))
+    (prog.AddLinearConstraint(le(dt, [1e-1]*N))
+            .evaluator().set_description("max timestep"))
 
     ''' Solve '''
     initial_guess = np.empty(prog.num_vars())
