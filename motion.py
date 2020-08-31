@@ -177,22 +177,28 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         (prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_lower_limits))
                 .evaluator().set_description(f"Eq(7k)[{k}] joint position lower limit"))
         ''' Constrain velocities '''
-        # prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], sorted_joint_velocity_limits))
-        # prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -sorted_joint_velocity_limits))
+        (prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], sorted_joint_velocity_limits))
+                .evaluator().set_description(f"Eq(7k)[{k}] joint velocity upper limit"))
+        (prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -sorted_joint_velocity_limits))
+                .evaluator().set_description(f"Eq(7k)[{k}] joint velocity lower limit"))
         ''' Constrain forces within friction cone '''
-        # beta_k = np.reshape(beta[k], (num_contact_points, N_d))
-        # for i in range(num_contact_points):
-            # beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
-            # prog.AddLinearConstraint(eq(Fj[i], beta_v))
+        beta_k = np.reshape(beta[k], (num_contact_points, N_d))
+        for i in range(num_contact_points):
+            beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
+            (prog.AddLinearConstraint(eq(Fj[i], beta_v))
+                    .evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint"))
         ''' Constrain beta positive '''
-        # for b in beta.flat:
-            # prog.AddLinearConstraint(b >= 0.0)
+        for b in beta.flat:
+            (prog.AddLinearConstraint(b >= 0.0)
+                    .evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint"))
         ''' Constrain torques - assume torque linear to friction cone'''
-        # friction_torque_coefficient = 0.1
-        # for i in range(num_contact_points):
-            # max_torque = friction_torque_coefficient * np.sum(beta_k[i])
-            # prog.AddLinearConstraint(le(tauj[i], np.array([0.0, 0.0, max_torque])))
-            # prog.AddLinearConstraint(ge(tauj[i], np.array([0.0, 0.0, -max_torque])))
+        friction_torque_coefficient = 0.1
+        for i in range(num_contact_points):
+            max_torque = friction_torque_coefficient * np.sum(beta_k[i])
+            (prog.AddLinearConstraint(le(tauj[i], np.array([0.0, 0.0, max_torque])))
+                    .evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit"))
+            (prog.AddLinearConstraint(ge(tauj[i], np.array([0.0, 0.0, -max_torque])))
+                    .evaluator().set_description(f"Eq(7k)[{k}] friction torque lower limit"))
 
         ''' Assume flat ground for now... '''
         def get_contact_positions_z(q, v):
