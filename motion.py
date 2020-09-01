@@ -317,6 +317,12 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             .evaluator().set_description("min timestep"))
     (prog.AddLinearConstraint(le(dt, [1e-1]*N))
             .evaluator().set_description("max timestep"))
+    '''
+    Constrain F to improve IPOPT performance
+    because IPOPT is an interior point method which works poorly for unconstrained variables
+    '''
+    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*10000))
+            .evaluator().set_description("max F"))
 
     ''' Solve '''
     initial_guess = np.empty(prog.num_vars())
