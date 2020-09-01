@@ -9,15 +9,10 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF, M
-from pydrake.all import eq, le, ge, PiecewisePolynomial, PiecewiseTrajectory
-from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph
-from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
-from pydrake.systems.analysis import Simulator
-from pydrake.systems.framework import DiagramBuilder
-from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
-from pydrake.all import IpoptSolver
-from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
-from pydrake.systems.framework import BasicVector, LeafSystem
+from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory
+from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
+from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
+from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge
 from balance import HumanoidController
 import numpy as np
 import time
