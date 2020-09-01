@@ -123,6 +123,9 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
     hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
 
+    ''' Slack for the complementary constraints '''
+    slack = 1e-10
+
     ''' Additional variables not explicitly stated '''
     # Friction cone scale
     beta = prog.NewContinuousVariables(rows=N, cols=num_contact_points*N_d, name="beta")
@@ -210,7 +213,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 plant.num_positions() + plant.num_velocities()])
             Fj = np.reshape(F, (num_contact_points, 3))
             return [Fj[:,2].dot(get_contact_positions_z(q, v))] # Constraint functions must output vectors
-        # prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[0.0], vars=np.concatenate([q[k], v[k], F[k]]))
+        (prog.AddConstraint(eq8a_lhs, lb=[-slack], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
+                .evaluator().set_description(f"Eq(8a)[{k}]"))
         ''' Eq(8b) '''
         def eq8b_lhs(q_v_tau):
             q, v, tau = np.split(q_v_tau, [
@@ -218,11 +222,16 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 plant.num_positions() + plant.num_velocities()])
             tauj = np.reshape(tau, (num_contact_points, 3))
             return (tauj**2).T.dot(get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
-        # prog.AddConstraint(eq8b_lhs, lb=[0.0]*3, ub=[0.0]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
+        (prog.AddConstraint(eq8b_lhs, lb=[-slack]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
+                .evaluator().set_description(f"Eq(8b)[{k}]"))
         ''' Eq(8c) '''
-        # prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-        # TODO: Fix infeasible constraint
-        # prog.AddConstraint(get_contact_positions_z, lb=[0.0]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=q[k])
+        (prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
+                .evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero"))
+        def eq8c_2(q_v):
+            q, v = np.split(q_v, [plant.num_positions()])
+            return get_contact_positions_z(q, v)
+        (prog.AddConstraint(eq8c_2, lb=[0.0]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=np.concatenate([q[k], v[k]]))
+                .evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero"))
 
     for k in range(1, N):
         ''' Eq(7d) '''
@@ -277,9 +286,27 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         for i in range(num_contact_points):
             ''' Assume flat ground for now... '''
             ''' Eq(9a) '''
-            # prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) == 0.0)
+            def eq9a_lhs(F_c_cprev):
+                F, c, c_prev = np.split(F_c_cprev, [
+                    contact_dim,
+                    contact_dim + contact_dim])
+                Fj = np.reshape(F, (num_contact_points, 3))
+                cj = np.reshape(c, (num_contact_points, 3))
+                cj_prev = np.reshape(c_prev, (num_contact_points, 3))
+                return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
+            (prog.AddConstraint(eq9a_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
+                    .evaluator().set_description("Eq(9a)[{k}][{i}]"))
             ''' Eq(9b) '''
-            # prog.AddConstraint(Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) == 0.0)
+            def eq9b_lhs(F_c_cprev):
+                F, c, c_prev = np.split(F_c_cprev, [
+                    contact_dim,
+                    contact_dim + contact_dim])
+                Fj = np.reshape(F, (num_contact_points, 3))
+                cj = np.reshape(c, (num_contact_points, 3))
+                cj_prev = np.reshape(c_prev, (num_contact_points, 3))
+                return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
+            (prog.AddConstraint(eq9b_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
+                    .evaluator().set_description("Eq(9b)[{k}][{i}]"))
     ''' Eq(10) '''
     Q_q = 0.1 * np.identity(plant.num_velocities())
     Q_v = 0.2 * np.identity(plant.num_velocities())
@@ -299,7 +326,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     (prog.AddLinearConstraint(eq(q[0], q_init))
             .evaluator().set_description("initial pose"))
     ''' Constrain initial velocity '''
-    # prog.AddLinearConstraint(eq(v[0], 0.0))
+    prog.AddLinearConstraint(eq(v[0], 0.0))
     ''' Constrain final pose '''
     if pelvis_only:
         (prog.AddLinearConstraint(eq(q[-1, 4:7], q_final[4:7]))
@@ -321,7 +348,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     Constrain F to improve IPOPT performance
     because IPOPT is an interior point method which works poorly for unconstrained variables
     '''
-    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*10000))
+    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e4))
             .evaluator().set_description("max F"))
 
     ''' Solve '''
