@@ -88,6 +88,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     load_atlas(plant)
     plant_autodiff = plant.ToAutoDiffXd()
     upright_context = plant.CreateDefaultContext()
+    set_atlas_initial_pose(plant, upright_context)
     q_nom = plant.GetPositions(upright_context)
 
     def get_contact_positions(q, v):
