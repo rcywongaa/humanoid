@@ -391,7 +391,7 @@ def main():
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
 
-    num_knot_points = 100
+    num_knot_points = 5
     max_time = 1.0
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
