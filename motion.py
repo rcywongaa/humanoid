@@ -125,7 +125,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
 
     ''' Slack for the complementary constraints '''
-    slack = 1e-10
+    slack = 1e-5
 
     ''' Additional variables not explicitly stated '''
     # Friction cone scale
@@ -346,11 +346,13 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     (prog.AddLinearConstraint(le(dt, [1e-1]*N))
             .evaluator().set_description("max timestep"))
     '''
-    Constrain F to improve IPOPT performance
+    Constrain unbounded variables to improve IPOPT performance
     because IPOPT is an interior point method which works poorly for unconstrained variables
     '''
     (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e4))
             .evaluator().set_description("max F"))
+    (prog.AddLinearConstraint(le(tau.flatten(), np.ones(tau.shape).flatten()*1e4))
+            .evaluator().set_description("max tau"))
 
     ''' Solve '''
     initial_guess = np.empty(prog.num_vars())
