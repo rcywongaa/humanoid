@@ -139,8 +139,17 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 .evaluator().set_description(f"Eq(7b)[{k}]"))
         ''' Eq(7c) '''
         # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
-        # TODO
-
+        def eq7c(q_v_h):
+            plant_eval = plant_autodiff if q_v_h.dtype == np.object else plant
+            q, v, h = np.split(q_v_h, [
+                plant.num_positions(),
+                plant.num_positions() + plant.num_velocities()])
+            context = plant_eval.CreateDefaultContext()
+            plant_eval.SetPositions(context, q)
+            plant_eval.SetVelocities(context, v)
+            return plant_eval.CalcSpatialMomentumInWorldAboutPoint(context, plant_eval.CalcCenterOfMassPosition(context)).rotational() - h
+        (prog.AddConstraint(eq7c, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], h[k]]))
+            .evaluator().set_description(f"Eq(7c)[{k}]"))
         ''' Eq(7h) '''
         def eq7h(q_v_r):
             plant_eval = plant_autodiff if q_v_r.dtype == np.object else plant
