@@ -76,21 +76,49 @@ class Interpolator(LeafSystem):
         t = self.EvalVectorInput(context, self.input_t_idx).get_value()
         output.SetFromVector(self.trajectory.get_acceleration(t))
 
+class ContextCache():
+    def __init__(self, plant, plant_autodiff):
+        self.plant = plant
+        self.plant_autodiff = plant_autodiff
+        self.context = plant.CreateDefaultContext()
+        self.context_autodiff = plant_autodiff.CreateDefaultContext()
+        self.q = None
+        self.q_autodiff = None
+        self.v = None
+        self.v_autodiff = None
+
+    def getPlantAndContext(self, q, v):
+        assert(q.dtype == v.dtype)
+        if q.dtype == np.object:
+            if (np.array_equal(self.q_autodiff, q)
+                    or np.array_equal(self.v_autodiff, v)):
+                self.q_autodiff = q
+                self.v_autodiff = v
+                self.plant_autodiff.SetPositions(self.context_autodiff, self.q_autodiff)
+                self.plant_autodiff.SetVelocities(self.context_autodiff, self.v_autodiff)
+            return self.plant_autodiff, self.context_autodiff
+        else:
+            if (not np.array_equal(self.q, q)
+                    or not np.array_equal(self.v, v)):
+                self.q = q
+                self.v = v
+                self.plant.SetPositions(self.context, self.q)
+                self.plant.SetVelocities(self.context, self.v)
+            return self.plant, self.context
+
 def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False):
     N = num_knot_points
     T = max_time
     plant = MultibodyPlant(mbp_time_step)
     load_atlas(plant)
     plant_autodiff = plant.ToAutoDiffXd()
+    cache = ContextCache(plant, plant_autodiff)
     upright_context = plant.CreateDefaultContext()
     set_atlas_initial_pose(plant, upright_context)
     q_nom = plant.GetPositions(upright_context)
 
     def get_contact_positions(q, v):
-        plant_eval = plant_autodiff if q.dtype == np.object else plant
-        context = plant_eval.CreateDefaultContext()
-        plant_eval.SetPositions(context, q)
-        plant_eval.SetVelocities(context, v)
+        plant_eval, context = cache.getPlantAndContext(q, v)
         lfoot_full_contact_positions = plant_eval.CalcPointsPositions(
                 context, plant_eval.GetFrameByName("l_foot"),
                 lfoot_full_contact_points, plant_eval.world_frame())
@@ -140,25 +168,19 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         ''' Eq(7c) '''
         # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
         def eq7c(q_v_h):
-            plant_eval = plant_autodiff if q_v_h.dtype == np.object else plant
             q, v, h = np.split(q_v_h, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
-            context = plant_eval.CreateDefaultContext()
-            plant_eval.SetPositions(context, q)
-            plant_eval.SetVelocities(context, v)
+            plant_eval, context = cache.getPlantAndContext(q, v)
             return plant_eval.CalcSpatialMomentumInWorldAboutPoint(context, plant_eval.CalcCenterOfMassPosition(context)).rotational() - h
         (prog.AddConstraint(eq7c, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], h[k]]))
             .evaluator().set_description(f"Eq(7c)[{k}]"))
         ''' Eq(7h) '''
         def eq7h(q_v_r):
-            plant_eval = plant_autodiff if q_v_r.dtype == np.object else plant
             q, v, r = np.split(q_v_r, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
-            context = plant_eval.CreateDefaultContext()
-            plant_eval.SetPositions(context, q)
-            plant_eval.SetVelocities(context, v)
+            plant_eval, context = cache.getPlantAndContext(q, v)
             return plant_eval.CalcCenterOfMassPosition(context) - r
         # COM position has dimension 3
         (prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
@@ -241,12 +263,11 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     for k in range(1, N):
         ''' Eq(7d) '''
         def eq7d(q_qprev_v_dt):
-            plant_eval = plant_autodiff if q_qprev_v_dt.dtype == np.object else plant
             q, qprev, v, dt = np.split(q_qprev_v_dt, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_positions(),
                 plant.num_positions() + plant.num_positions() + plant.num_velocities()])
-            context = plant_eval.CreateDefaultContext()
+            plant_eval, context = cache.getPlantAndContext(q, v)
             qd = plant_eval.MapVelocityToQDot(context, v*dt[0])
             return q - qprev - qd
         # dt[k] must be converted to an array
@@ -316,12 +337,14 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     Q_q = 0.1 * np.identity(plant.num_velocities())
     Q_v = 0.2 * np.identity(plant.num_velocities())
     for k in range(N):
-        def pose_error_cost(q_dt):
-            plant_eval = plant_autodiff if q_dt.dtype == np.object else plant
-            q, dt = np.split(q_dt, [plant_eval.num_positions()])
-            q_err = plant_eval.MapQDotToVelocity(plant_eval.CreateDefaultContext(), q-q_nom)
+        def pose_error_cost(q_v_dt):
+            q, v, dt = np.split(q_v_dt, [
+                plant.num_positions(),
+                plant.num_positions() + plant.num_velocities()])
+            plant_eval, context = cache.getPlantAndContext(q, v)
+            q_err = plant_eval.MapQDotToVelocity(context, q-q_nom)
             return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
-        prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], [dt[k]]]))
+        prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
         prog.AddCost(dt[k]*(
                 + v[k].dot(Q_v).dot(v[k])
                 + rdd[k].dot(rdd[k])))
