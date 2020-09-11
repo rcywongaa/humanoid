@@ -382,9 +382,6 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             .evaluator().set_description("max tau"))
     (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
             .evaluator().set_description("max beta"))
-    ''' Temporary '''
-    (prog.AddLinearConstraint(eq(h[0], [0.0]*3))
-            .evaluator().set_description("temp constraint on h"))
 
     ''' Solve '''
     initial_guess = np.empty(prog.num_vars())
