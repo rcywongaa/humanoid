@@ -198,8 +198,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         (prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
                 .evaluator().set_description(f"Eq(7i)[{k}]"))
         ''' Eq(7j) '''
-        ''' We don't constrain the contact point positions for now... '''
-
+        (prog.AddBoundingBoxConstraint([-10, -10, 0]*num_contact_points, [10, 10, 10]*num_contact_points, c[k])
+                .evaluator().set_description(f"Eq(7j)[{k}]"))
         ''' Eq(7k) '''
         ''' Constrain admissible posture '''
         (prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_upper_limits))
