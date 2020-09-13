@@ -218,7 +218,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             (prog.AddLinearConstraint(eq(Fj[i], beta_v))
                     .evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint"))
         ''' Constrain beta positive '''
-        for b in beta.flat:
+        for b in beta_k.flat:
             (prog.AddLinearConstraint(b >= 0.0)
                     .evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint"))
         ''' Constrain torques - assume torque linear to friction cone'''
