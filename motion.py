@@ -202,15 +202,11 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 .evaluator().set_description(f"Eq(7j)[{k}]"))
         ''' Eq(7k) '''
         ''' Constrain admissible posture '''
-        (prog.AddLinearConstraint(le(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_upper_limits))
-                .evaluator().set_description(f"Eq(7k)[{k}] joint position upper limit"))
-        (prog.AddLinearConstraint(ge(q[k, FLOATING_BASE_QUAT_DOF:], sorted_joint_position_lower_limits))
-                .evaluator().set_description(f"Eq(7k)[{k}] joint position lower limit"))
+        (prog.AddBoundingBoxConstraint(sorted_joint_position_lower_limits, sorted_joint_position_upper_limits,
+                q[k, FLOATING_BASE_QUAT_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint position"))
         ''' Constrain velocities '''
-        (prog.AddLinearConstraint(le(v[k, FLOATING_BASE_DOF:], sorted_joint_velocity_limits))
-                .evaluator().set_description(f"Eq(7k)[{k}] joint velocity upper limit"))
-        (prog.AddLinearConstraint(ge(v[k, FLOATING_BASE_DOF:], -sorted_joint_velocity_limits))
-                .evaluator().set_description(f"Eq(7k)[{k}] joint velocity lower limit"))
+        (prog.AddBoundingBoxConstraint(-sorted_joint_velocity_limits, sorted_joint_velocity_limits,
+            v[k, FLOATING_BASE_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint velocity"))
         ''' Constrain forces within friction cone '''
         beta_k = np.reshape(beta[k], (num_contact_points, N_d))
         for i in range(num_contact_points):
