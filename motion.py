@@ -363,8 +363,13 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     ''' Constrain time taken '''
     (prog.AddLinearConstraint(np.sum(dt) <= T)
             .evaluator().set_description("max time"))
-    ''' Constrain time step '''
-    (prog.AddLinearConstraint(ge(dt, [1e-5]*N))
+    ''' Constrain first time step '''
+    # Note that the first time step is only used in the initial cost calculation
+    # and not in the backwards Euler
+    (prog.AddLinearConstraint(dt[0] == 0)
+            .evaluator().set_description("first timestep"))
+    ''' Constrain remaining time step '''
+    (prog.AddLinearConstraint(ge(dt[1:], [1e-5]*(N-1)))
             .evaluator().set_description("min timestep"))
     (prog.AddLinearConstraint(le(dt, [1e-1]*N))
             .evaluator().set_description("max timestep"))
