@@ -360,7 +360,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         (prog.AddLinearConstraint(eq(q[-1], q_final))
                 .evaluator().set_description("final pose"))
     ''' Constrain final velocity '''
-    # prog.AddLinearConstraint(eq(v[0], 0.0))
+    prog.AddLinearConstraint(eq(v[-1], 0.0))
     ''' Constrain time taken '''
     (prog.AddLinearConstraint(np.sum(dt) <= T)
             .evaluator().set_description("max time"))
