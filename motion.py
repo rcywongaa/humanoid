@@ -23,6 +23,8 @@ mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
+MAX_GROUND_PENETRATION = 5e-3
+
 num_contact_points = lfoot_full_contact_points.shape[1]+rfoot_full_contact_points.shape[1]
 mu = 1.0 # Coefficient of friction, same as in load_atlas.py
 n = np.array([
@@ -199,7 +201,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         (prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
                 .evaluator().set_description(f"Eq(7i)[{k}]"))
         ''' Eq(7j) '''
-        (prog.AddBoundingBoxConstraint([-10, -10, 0]*num_contact_points, [10, 10, 10]*num_contact_points, c[k])
+        (prog.AddBoundingBoxConstraint([-10, -10, -MAX_GROUND_PENETRATION]*num_contact_points, [10, 10, 10]*num_contact_points, c[k])
                 .evaluator().set_description(f"Eq(7j)[{k}]"))
         ''' Eq(7k) '''
         ''' Constrain admissible posture '''
@@ -254,7 +256,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         def eq8c_2(q_v):
             q, v = np.split(q_v, [plant.num_positions()])
             return get_contact_positions_z(q, v)
-        (prog.AddConstraint(eq8c_2, lb=[0.0]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=np.concatenate([q[k], v[k]]))
+        (prog.AddConstraint(eq8c_2, lb=[-MAX_GROUND_PENETRATION]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=np.concatenate([q[k], v[k]]))
                 .evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero"))
 
     for k in range(1, N):
