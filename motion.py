@@ -433,9 +433,9 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     r_sol = result.GetSolution(r)
     rd_sol = result.GetSolution(rd)
     rdd_sol = result.GetSolution(rdd)
-    kt_sol = result.GetSolution(kt)
+    dt_sol = result.GetSolution(dt)
 
-    return r_sol, rd_sol, rdd_sol, kt_sol
+    return r_sol, rd_sol, rdd_sol, dt_sol
 
 def main():
     builder = DiagramBuilder()
@@ -453,7 +453,7 @@ def main():
     max_time = 1.0
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
-    r_traj, rd_traj, rdd_traj, kt_traj = calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
+    r_traj, rd_traj, rdd_traj, dt_traj = calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
     controller.set_name("HumanoidController")
@@ -462,7 +462,7 @@ def main():
     builder.Connect(plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), plant.get_actuation_input_port())
 
-    interpolator = builder.AddSystem(Interpolator(r_traj, rd_traj, rdd_traj, kt_traj))
+    interpolator = builder.AddSystem(Interpolator(r_traj, rd_traj, rdd_traj, dt_traj))
     interpolator.set_name("Interpolator")
     ''' Connect interpolator to controller '''
     builder.Connect(interpolator.GetOutputPort("r"), controller.GetInputPort("r"))
