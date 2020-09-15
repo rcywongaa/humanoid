@@ -239,7 +239,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 plant.num_positions() + plant.num_velocities()])
             Fj = np.reshape(F, (num_contact_points, 3))
             return [Fj[:,2].dot(get_contact_positions_z(q, v))] # Constraint functions must output vectors
-        (prog.AddConstraint(eq8a_lhs, lb=[-slack], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
+        (prog.AddConstraint(eq8a_lhs, lb=[0.0], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
                 .evaluator().set_description(f"Eq(8a)[{k}]"))
         ''' Eq(8b) '''
         def eq8b_lhs(q_v_tau):
@@ -380,11 +380,11 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     Constrain unbounded variables to improve IPOPT performance
     because IPOPT is an interior point method which works poorly for unconstrained variables
     '''
-    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
+    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e4))
             .evaluator().set_description("max F"))
-    (prog.AddLinearConstraint(le(tau.flatten(), np.ones(tau.shape).flatten()*1e3))
+    (prog.AddLinearConstraint(le(tau.flatten(), np.ones(tau.shape).flatten()*1e4))
             .evaluator().set_description("max tau"))
-    (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
+    (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e4))
             .evaluator().set_description("max beta"))
 
     ''' Solve '''
@@ -406,6 +406,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
         for t in np.linspace(0, T, N)])
     prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
+    # TODO: Also guess other variables
 
     solver = IpoptSolver()
     options = SolverOptions()
@@ -449,11 +450,12 @@ def main():
     set_atlas_initial_pose(plant, plant_context)
 
     q_init = plant.GetPositions(plant_context)
+    q_init[6] = 1.0 # Avoid initializing with ground penetration
     q_final = q_init.copy()
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
 
-    num_knot_points = 5
+    num_knot_points = 3
     max_time = 1.0
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
