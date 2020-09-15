@@ -9,7 +9,8 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF, M
-from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory
+from pydrake.all import Quaternion
+from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
@@ -389,9 +390,20 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     # Guess evenly distributed dt
     prog.SetDecisionVariableValueInVector(dt, [T/N] * N, initial_guess)
     # Guess q to avoid initializing with invalid quaternion
-    prog.SetDecisionVariableValueInVector(q, [q_init] * N, initial_guess)
-    # TODO: Linear interpolate q, taking care of quaternion
-    # TODO: Guess v based on interpolation
+    quat_traj_guess = PiecewiseQuaternionSlerp()
+    quat_traj_guess.Append(0, Quaternion(q_init[0:4]))
+    quat_traj_guess.Append(T, Quaternion(q_final[0:4]))
+    position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, T], np.vstack([q_init[4:], q_final[4:]]).T)
+    q_guess = np.array([np.hstack([
+        Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
+        for t in np.linspace(0, T, N)])
+    prog.SetDecisionVariableValueInVector(q, q_guess, initial_guess)
+    v_traj_guess = position_traj_guess.MakeDerivative()
+    w_traj_guess = quat_traj_guess.MakeDerivative()
+    v_guess = np.array([
+        np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
+        for t in np.linspace(0, T, N)])
+    prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
 
     start_solve_time = time.time()
     solver = IpoptSolver()
