@@ -13,7 +13,7 @@ from pydrake.all import Quaternion
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
-from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
+from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions, CommonSolverOption
 from balance import HumanoidController
 import numpy as np
 import time
@@ -405,10 +405,12 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         for t in np.linspace(0, T, N)])
     prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
 
-    start_solve_time = time.time()
     solver = IpoptSolver()
     options = SolverOptions()
-    options.SetOption(solver.solver_id(), "max_iter", 1000)
+    # options.SetOption(solver.solver_id(), "max_iter", 10000)
+    # This doesn't seem to do anything...
+    # options.SetOption(CommonSolverOption.kPrintToConsole, True)
+    start_solve_time = time.time()
     print(f"Start solving...")
     result = solver.Solve(prog, initial_guess, options) # Currently takes around 30 mins
     print(f"Solve time: {time.time() - start_solve_time}s")
