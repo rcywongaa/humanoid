@@ -248,7 +248,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 plant.num_positions() + plant.num_velocities()])
             tauj = np.reshape(tau, (num_contact_points, 3))
             return (tauj**2).T.dot(get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
-        (prog.AddConstraint(eq8b_lhs, lb=[-slack]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
+        (prog.AddConstraint(eq8b_lhs, lb=[0.0]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
                 .evaluator().set_description(f"Eq(8b)[{k}]"))
         ''' Eq(8c) '''
         (prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
