@@ -13,7 +13,7 @@ from pydrake.all import Quaternion
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
-from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions, CommonSolverOption
+from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
 from balance import HumanoidController
 import numpy as np
 import time
@@ -85,29 +85,20 @@ class ContextCache():
         self.plant_autodiff = plant_autodiff
         self.context = plant.CreateDefaultContext()
         self.context_autodiff = plant_autodiff.CreateDefaultContext()
-        self.q = None
-        self.q_autodiff = None
-        self.v = None
-        self.v_autodiff = None
 
     def getPlantAndContext(self, q, v):
         assert(q.dtype == v.dtype)
         if q.dtype == np.object:
-            if (np.array_equal(self.q_autodiff, q)
-                    or np.array_equal(self.v_autodiff, v)):
-                self.q_autodiff = q
-                self.v_autodiff = v
-                self.plant_autodiff.SetPositions(self.context_autodiff, self.q_autodiff)
-                self.plant_autodiff.SetVelocities(self.context_autodiff, self.v_autodiff)
+            self.plant_autodiff.SetPositions(self.context_autodiff, q)
+            self.plant_autodiff.SetVelocities(self.context_autodiff, v)
             return self.plant_autodiff, self.context_autodiff
         else:
-            if (not np.array_equal(self.q, q)
-                    or not np.array_equal(self.v, v)):
-                self.q = q
-                self.v = v
-                self.plant.SetPositions(self.context, self.q)
-                self.plant.SetVelocities(self.context, self.v)
+            self.plant.SetPositions(self.context, q)
+            self.plant.SetVelocities(self.context, v)
             return self.plant, self.context
+
+def toTauj(tau_k):
+    return np.hstack([np.zeros((num_contact_points, 2)), np.reshape(tau_k, (num_contact_points, 1))])
 
 def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False):
     N = num_knot_points
@@ -146,7 +137,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     # [contact1_x, contact1_y, contact1_z, contact2_x, contact2_y, contact2_z, ...]
     c = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="c")
     F = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="F")
-    tau = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="tau")
+    tau = prog.NewContinuousVariables(rows=N, cols=num_contact_points, name="tau") # We assume only z torque exists
     h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
     hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
 
@@ -165,7 +156,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 .evaluator().set_description(f"Eq(7a)[{k}]"))
         ''' Eq(7b) '''
         cj = np.reshape(c[k], (num_contact_points, 3))
-        tauj = np.reshape(tau[k], (num_contact_points, 3))
+        tauj = toTauj(tau[k])
         (prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
                 .evaluator().set_description(f"Eq(7b)[{k}]"))
         ''' Eq(7c) '''
@@ -224,9 +215,9 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         friction_torque_coefficient = 0.1
         for i in range(num_contact_points):
             max_torque = friction_torque_coefficient * np.sum(beta_k[i])
-            (prog.AddLinearConstraint(le(tauj[i], np.array([0.0, 0.0, max_torque])))
+            (prog.AddLinearConstraint(le(tau[k][i], np.array([max_torque])))
                     .evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit"))
-            (prog.AddLinearConstraint(ge(tauj[i], np.array([0.0, 0.0, -max_torque])))
+            (prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
                     .evaluator().set_description(f"Eq(7k)[{k}] friction torque lower limit"))
 
         ''' Assume flat ground for now... '''
@@ -246,7 +237,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             q, v, tau = np.split(q_v_tau, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
-            tauj = np.reshape(tau, (num_contact_points, 3))
+            tauj = toTauj(tau)
             return (tauj**2).T.dot(get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
         (prog.AddConstraint(eq8b_lhs, lb=[0.0]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
                 .evaluator().set_description(f"Eq(8b)[{k}]"))
@@ -406,7 +397,10 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
         for t in np.linspace(0, T, N)])
     prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
-    # TODO: Also guess other variables
+    c_guess = np.array([
+        get_contact_positions(q_guess[i], v_guess[i]).flatten() for i in range(N)])
+    prog.SetDecisionVariableValueInVector(c, c_guess, initial_guess)
+    # r_guess = np.array([
 
     solver = IpoptSolver()
     options = SolverOptions()
