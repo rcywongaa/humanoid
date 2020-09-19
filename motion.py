@@ -386,8 +386,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
 
     ''' Solve '''
     initial_guess = np.empty(prog.num_vars())
-    # Guess evenly distributed dt
-    prog.SetDecisionVariableValueInVector(dt, [T/N] * N, initial_guess)
+    prog.SetDecisionVariableValueInVector(dt, [0.0] + [T/(N-1)] * (N-1), initial_guess)
     # Guess q to avoid initializing with invalid quaternion
     quat_traj_guess = PiecewiseQuaternionSlerp()
     quat_traj_guess.Append(0, Quaternion(q_init[0:4]))
@@ -397,6 +396,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
         for t in np.linspace(0, T, N)])
     prog.SetDecisionVariableValueInVector(q, q_guess, initial_guess)
+
     v_traj_guess = position_traj_guess.MakeDerivative()
     w_traj_guess = quat_traj_guess.MakeDerivative()
     v_guess = np.array([
