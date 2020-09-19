@@ -161,21 +161,25 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 .evaluator().set_description(f"Eq(7b)[{k}]"))
         ''' Eq(7c) '''
         # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
+        def calc_h(q, v):
+            plant_eval, context = cache.getPlantAndContext(q, v)
+            return plant_eval.CalcSpatialMomentumInWorldAboutPoint(context, plant_eval.CalcCenterOfMassPosition(context)).rotational()
         def eq7c(q_v_h):
             q, v, h = np.split(q_v_h, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
-            plant_eval, context = cache.getPlantAndContext(q, v)
-            return plant_eval.CalcSpatialMomentumInWorldAboutPoint(context, plant_eval.CalcCenterOfMassPosition(context)).rotational() - h
+            return calc_h(q, v) - h
         (prog.AddConstraint(eq7c, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], h[k]]))
             .evaluator().set_description(f"Eq(7c)[{k}]"))
         ''' Eq(7h) '''
+        def calc_r(q, v):
+            plant_eval, context = cache.getPlantAndContext(q, v)
+            return plant_eval.CalcCenterOfMassPosition(context)
         def eq7h(q_v_r):
             q, v, r = np.split(q_v_r, [
                 plant.num_positions(),
                 plant.num_positions() + plant.num_velocities()])
-            plant_eval, context = cache.getPlantAndContext(q, v)
-            return plant_eval.CalcCenterOfMassPosition(context) - r
+            return  calc_r(q, v) - r
         # COM position has dimension 3
         (prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
                 .evaluator().set_description(f"Eq(7h)[{k}]"))
@@ -406,7 +410,14 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         # pdb.set_trace()
         assert((eq7i(np.concatenate([q_guess[i], v_guess[i], c_guess[i]])) == 0.0).all())
     prog.SetDecisionVariableValueInVector(c, c_guess, initial_guess)
-    # r_guess = np.array([
+
+    r_guess = np.array([
+        calc_r(q_guess[i], v_guess[i]) for i in range(N)])
+    prog.SetDecisionVariableValueInVector(r, r_guess, initial_guess)
+
+    h_guess = np.array([
+        calc_h(q_guess[i], v_guess[i]) for i in range(N)])
+    prog.SetDecisionVariableValueInVector(h, h_guess, initial_guess)
 
     solver = IpoptSolver()
     options = SolverOptions()
