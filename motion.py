@@ -399,8 +399,12 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
         for t in np.linspace(0, T, N)])
     prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
+
     c_guess = np.array([
-        get_contact_positions(q_guess[i], v_guess[i]).flatten() for i in range(N)])
+        get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(N)])
+    for i in range(N):
+        # pdb.set_trace()
+        assert((eq7i(np.concatenate([q_guess[i], v_guess[i], c_guess[i]])) == 0.0).all())
     prog.SetDecisionVariableValueInVector(c, c_guess, initial_guess)
     # r_guess = np.array([
 
