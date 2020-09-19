@@ -142,7 +142,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
 
     ''' Slack for the complementary constraints '''
-    slack = 1e-5
+    slack = 1e-4
 
     ''' Additional variables not explicitly stated '''
     # Friction cone scale
@@ -355,7 +355,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     ''' Constrain final velocity '''
     prog.AddLinearConstraint(eq(v[-1], 0.0))
     ''' Constrain time taken '''
-    (prog.AddLinearConstraint(np.sum(dt) <= T)
+    (prog.AddLinearConstraint(np.sum(dt) == T)
             .evaluator().set_description("max time"))
     ''' Constrain first time step '''
     # Note that the first time step is only used in the initial cost calculation
@@ -363,9 +363,11 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     (prog.AddLinearConstraint(dt[0] == 0)
             .evaluator().set_description("first timestep"))
     ''' Constrain remaining time step '''
-    (prog.AddLinearConstraint(ge(dt[1:], [1e-5]*(N-1)))
+    # Values taken from
+    # https://colab.research.google.com/github/RussTedrake/underactuated/blob/master/exercises/simple_legs/compass_gait_limit_cycle/compass_gait_limit_cycle.ipynb
+    (prog.AddLinearConstraint(ge(dt[1:], [0.005]*(N-1)))
             .evaluator().set_description("min timestep"))
-    (prog.AddLinearConstraint(le(dt, [1e-1]*N))
+    (prog.AddLinearConstraint(le(dt, [0.05]*N))
             .evaluator().set_description("max timestep"))
     '''
     Constrain unbounded variables to improve IPOPT performance
@@ -450,7 +452,7 @@ def main():
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
 
     num_knot_points = 3
-    max_time = 1.0
+    max_time = 0.2
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
     r_traj, rd_traj, rdd_traj, dt_traj = calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
