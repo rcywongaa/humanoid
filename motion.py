@@ -329,7 +329,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                     .evaluator().set_description("Eq(9b)[{k}][{i}]"))
     ''' Eq(10) '''
     Q_q = 0.1 * np.identity(plant.num_velocities())
-    Q_v = 0.2 * np.identity(plant.num_velocities())
+    Q_v = 1.0 * np.identity(plant.num_velocities())
     for k in range(N):
         def pose_error_cost(q_v_dt):
             q, v, dt = np.split(q_v_dt, [
@@ -359,7 +359,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     ''' Constrain final velocity '''
     prog.AddLinearConstraint(eq(v[-1], 0.0))
     ''' Constrain time taken '''
-    (prog.AddLinearConstraint(np.sum(dt) == T)
+    (prog.AddLinearConstraint(np.sum(dt) <= T)
             .evaluator().set_description("max time"))
     ''' Constrain first time step '''
     # Note that the first time step is only used in the initial cost calculation
@@ -386,7 +386,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
 
     ''' Solve '''
     initial_guess = np.empty(prog.num_vars())
-    prog.SetDecisionVariableValueInVector(dt, [0.0] + [T/(N-1)] * (N-1), initial_guess)
+    dt_guess = [0.0] + [T/(N-1)] * (N-1)
+    prog.SetDecisionVariableValueInVector(dt, dt_guess, initial_guess)
     # Guess q to avoid initializing with invalid quaternion
     quat_traj_guess = PiecewiseQuaternionSlerp()
     quat_traj_guess.Append(0, Quaternion(q_init[0:4]))
@@ -466,8 +467,8 @@ def main():
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
 
-    num_knot_points = 3
-    max_time = 0.2
+    num_knot_points = 4
+    max_time = 0.14278
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
     r_traj, rd_traj, rdd_traj, dt_traj = calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
