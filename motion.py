@@ -375,13 +375,15 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             .evaluator().set_description("max timestep"))
     '''
     Constrain unbounded variables to improve IPOPT performance
-    because IPOPT is an interior point method which works poorly for unconstrained variables
+    because IPOPT is an interior point method which works poorly for unbounded variables
     '''
-    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e4))
+    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
             .evaluator().set_description("max F"))
-    (prog.AddLinearConstraint(le(tau.flatten(), np.ones(tau.shape).flatten()*1e4))
+    (prog.AddLinearConstraint(ge(tau.flatten(), -np.ones(tau.shape).flatten()*1e3))
             .evaluator().set_description("max tau"))
-    (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e4))
+    (prog.AddLinearConstraint(le(tau.flatten(), np.ones(tau.shape).flatten()*1e3))
+            .evaluator().set_description("max tau"))
+    (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
             .evaluator().set_description("max beta"))
 
     ''' Solve '''
@@ -430,7 +432,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     result = solver.Solve(prog, initial_guess, options) # Currently takes around 30 mins
     print(f"Solve time: {time.time() - start_solve_time}s")
     if not result.is_success():
-        print(f"FAILED")
+        print(f"FAILED - Cost: {result.get_optimal_cost()}")
         print(result.GetInfeasibleConstraintNames(prog))
         q_sol = result.GetSolution(q)
         v_sol = result.GetSolution(v)
