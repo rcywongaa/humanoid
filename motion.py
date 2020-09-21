@@ -14,6 +14,7 @@ from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuate
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
+# from pydrake.all import ContactWrenchFromForceInWorldFrameEvaluator
 from balance import HumanoidController
 import numpy as np
 import time
@@ -23,7 +24,7 @@ mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
-MAX_GROUND_PENETRATION = 5e-3
+MAX_GROUND_PENETRATION = 1e-3
 
 num_contact_points = lfoot_full_contact_points.shape[1]+rfoot_full_contact_points.shape[1]
 mu = 1.0 # Coefficient of friction, same as in load_atlas.py
@@ -225,6 +226,27 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         def get_contact_positions_z(q, v):
             return get_contact_positions(q, v)[2,:]
         ''' Eq(8a) '''
+        # TODO: Should use
+        # https://drake.mit.edu/doxygen_cxx/namespacedrake_1_1multibody.html#a4508ec670196c3fe45e9b52af8a73d4a
+        # https://github.com/RobotLocomotion/drake/blob/master/multibody/optimization/static_equilibrium_problem.cc
+        # https://github.com/RobotLocomotion/drake/blob/master/multibody/optimization/static_friction_cone_complementarity_constraint.cc
+        def createContactWrenchFromForceInWorldFrameEvaluator(q, v, F):
+            # Fj = np.reshape(F, (num_contact_points, 3))
+            plant, context = getPlantAndContext(q, v)
+            inspector = plant.get_geometry_query_input_port().Eval(context).inspector()
+            collision_candidate_pairs = inspector.GetCollisionCandidates()
+            contact_wrench_evaluators_and_lambdas = []
+            for pair in collision_candidate_pairs:
+                # TODO: Check if collision pair is foot collision
+                # TODO: Check which contact point on foot and use the corresponding Fj as lambda
+                contact_wrench_evaluator = ContactWrenchFromForceInWorldFrameEvaluator(
+                        plant, context, (pair[0], pair[1]))
+                contact_wrench_evaluators_and_lambdas.append((contact_wrench_evaluator, Fi))
+            return contact_wrench_evaluators_and_lambdas
+        contact_wrench_evaluators_and_lambdas = createContactWrenchFromForceInWorldFrameEvaluator(q[k], v[k], F[k])
+        for evaluator_lambda_pair : contact_wrench_evaluators_and_lambdas:
+            AddStaticFrictionConeComplementarityConstraint(evaluator_lambda_pair[0], slack, q[k], evaluator_lambda_pair[1], prog)
+        ''' Eq(8a) '''
         def eq8a_lhs(q_v_F):
             q, v, F = np.split(q_v_F, [
                 plant_float.num_positions(),
@@ -421,7 +443,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
 
     solver = IpoptSolver()
     options = SolverOptions()
-    # options.SetOption(solver.solver_id(), "max_iter", 10000)
+    # options.SetOption(solver.solver_id(), "max_iter", 5000)
     # This doesn't seem to do anything...
     # options.SetOption(CommonSolverOption.kPrintToConsole, True)
     start_solve_time = time.time()
