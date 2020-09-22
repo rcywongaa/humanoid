@@ -85,7 +85,8 @@ def toTauj(tau_k):
 def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False):
     N = num_knot_points
     T = max_time
-    plant_float = MultibodyPlant(mbp_time_step)
+    builder = DiagramBuilder()
+    plant_float, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
     load_atlas(plant_float)
     context_float = plant_float.CreateDefaultContext()
     plant_autodiff = plant_float.ToAutoDiffXd()
