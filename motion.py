@@ -79,41 +79,36 @@ class Interpolator(LeafSystem):
         t = self.EvalVectorInput(context, self.input_t_idx).get_value()
         output.SetFromVector(self.trajectory.get_acceleration(t))
 
-class ContextCache():
-    def __init__(self, plant, plant_autodiff):
-        self.plant = plant
-        self.plant_autodiff = plant_autodiff
-        self.context = plant.CreateDefaultContext()
-        self.context_autodiff = plant_autodiff.CreateDefaultContext()
-
-    def getPlantAndContext(self, q, v):
-        assert(q.dtype == v.dtype)
-        if q.dtype == np.object:
-            self.plant_autodiff.SetPositions(self.context_autodiff, q)
-            self.plant_autodiff.SetVelocities(self.context_autodiff, v)
-            return self.plant_autodiff, self.context_autodiff
-        else:
-            self.plant.SetPositions(self.context, q)
-            self.plant.SetVelocities(self.context, v)
-            return self.plant, self.context
-
 def toTauj(tau_k):
     return np.hstack([np.zeros((num_contact_points, 2)), np.reshape(tau_k, (num_contact_points, 1))])
 
 def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False):
     N = num_knot_points
     T = max_time
-    plant = MultibodyPlant(mbp_time_step)
+    plant_float = MultibodyPlant(mbp_time_step)
     load_atlas(plant_float)
+    context_float = plant_float.CreateDefaultContext()
     plant_autodiff = plant_float.ToAutoDiffXd()
-    cache = ContextCache(plant_float, plant_autodiff)
+    context_autodiff = plant_autodiff.CreateDefaultContext()
     upright_context = plant_float.CreateDefaultContext()
     set_atlas_initial_pose(plant_float, upright_context)
     q_nom = plant_float.GetPositions(upright_context)
 
+    def getPlantAndContext(q, v):
+        assert(q.dtype == v.dtype)
+        if q.dtype == np.object:
+            plant_autodiff.SetPositions(context_autodiff, q)
+            plant_autodiff.SetVelocities(context_autodiff, v)
+            return plant_autodiff, context_autodiff
+        else:
+            plant_float.SetPositions(context_float, q)
+            plant_float.SetVelocities(context_float, v)
+            return plant_float, context_float
+
+
     # Returns contact positions in the shape [3, num_contact_points]
     def get_contact_positions(q, v):
-        plant, context = cache.getPlantAndContext(q, v)
+        plant, context = getPlantAndContext(q, v)
         lfoot_full_contact_positions = plant.CalcPointsPositions(
                 context, plant.GetFrameByName("l_foot"),
                 lfoot_full_contact_points, plant.world_frame())
@@ -163,7 +158,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         ''' Eq(7c) '''
         # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
         def calc_h(q, v):
-            plant, context = cache.getPlantAndContext(q, v)
+            plant, context = getPlantAndContext(q, v)
             return plant.CalcSpatialMomentumInWorldAboutPoint(context, plant.CalcCenterOfMassPosition(context)).rotational()
         def eq7c(q_v_h):
             q, v, h = np.split(q_v_h, [
@@ -174,7 +169,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             .evaluator().set_description(f"Eq(7c)[{k}]"))
         ''' Eq(7h) '''
         def calc_r(q, v):
-            plant, context = cache.getPlantAndContext(q, v)
+            plant, context = getPlantAndContext(q, v)
             return plant.CalcCenterOfMassPosition(context)
         def eq7h(q_v_r):
             q, v, r = np.split(q_v_r, [
@@ -262,7 +257,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 plant_float.num_positions(),
                 plant_float.num_positions() + plant_float.num_positions(),
                 plant_float.num_positions() + plant_float.num_positions() + plant_float.num_velocities()])
-            plant, context = cache.getPlantAndContext(q, v)
+            plant, context = getPlantAndContext(q, v)
             qd = plant.MapVelocityToQDot(context, v*dt[0])
             return q - qprev - qd
         # dt[k] must be converted to an array
@@ -336,7 +331,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             q, v, dt = np.split(q_v_dt, [
                 plant_float.num_positions(),
                 plant_float.num_positions() + plant_float.num_velocities()])
-            plant, context = cache.getPlantAndContext(q, v)
+            plant, context = getPlantAndContext(q, v)
             q_err = plant.MapQDotToVelocity(context, q-q_nom)
             return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
         prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
@@ -381,7 +376,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
             .evaluator().set_description("max F"))
     (prog.AddLinearConstraint(ge(tau.flatten(), -np.ones(tau.shape).flatten()*1e3))
-            .evaluator().set_description("max tau"))
+            .evaluator().set_description("min tau"))
     (prog.AddLinearConstraint(le(tau.flatten(), np.ones(tau.shape).flatten()*1e3))
             .evaluator().set_description("max tau"))
     (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
