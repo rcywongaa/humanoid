@@ -420,7 +420,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
 
     solver = IpoptSolver()
     options = SolverOptions()
-    # options.SetOption(solver.solver_id(), "max_iter", 10000)
+    options.SetOption(solver.solver_id(), "max_iter", 10000)
     # This doesn't seem to do anything...
     # options.SetOption(CommonSolverOption.kPrintToConsole, True)
     start_solve_time = time.time()
