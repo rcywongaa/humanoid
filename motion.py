@@ -137,7 +137,10 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
     hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
 
-    ''' Slack for the complementary constraints '''
+    '''
+    Slack for the complementary constraints
+    Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
+    '''
     slack = 1e-3
 
     ''' Additional variables not explicitly stated '''
@@ -424,9 +427,9 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     start_solve_time = time.time()
     print(f"Start solving...")
     result = solver.Solve(prog, initial_guess, options) # Currently takes around 30 mins
-    print(f"Solve time: {time.time() - start_solve_time}s")
+    print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
     if not result.is_success():
-        print(f"FAILED - Cost: {result.get_optimal_cost()}")
+        print(f"FAILED")
         print(result.GetInfeasibleConstraintNames(prog))
         q_sol = result.GetSolution(q)
         v_sol = result.GetSolution(v)
@@ -441,8 +444,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         hd_sol = result.GetSolution(hd)
         beta_sol = result.GetSolution(beta)
         pdb.set_trace()
-        exit(-1)
-    print(f"Cost: {result.get_optimal_cost()}")
+    print(f"SUCCESS")
     r_sol = result.GetSolution(r)
     rd_sol = result.GetSolution(rd)
     rdd_sol = result.GetSolution(rdd)
