@@ -86,8 +86,10 @@ Use gcc 7 instead of gcc 8
    ```
 1. Run `python3 load_atlas.py`
 
-### `ModuleNotFoundError: No module named 'vtkCommonCorePython'` when launching drake-visualizer
-In `tools/workspace/drake_visualizer/repository.bzl` set `USE_SYSTEM_VTK=OFF` and rebuild
+### VTK problems when launching drake-visualizer
+- `ModuleNotFoundError: No module named 'vtkCommonCorePython'`
+- `libvtkxxx.so: No such file or directory`
+In `CMakeLists.txt`, add `--define="-DUSE_SYSTEM_VTK=OFF"` after `${BAZEL_TARGETS}`
 
 ## Resources
 
