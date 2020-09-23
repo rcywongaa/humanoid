@@ -23,7 +23,7 @@ mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
-MAX_GROUND_PENETRATION = 5e-3
+MAX_GROUND_PENETRATION = 1e-2
 
 num_contact_points = lfoot_full_contact_points.shape[1]+rfoot_full_contact_points.shape[1]
 mu = 1.0 # Coefficient of friction, same as in load_atlas.py
@@ -138,7 +138,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
 
     ''' Slack for the complementary constraints '''
-    slack = 1e-4
+    slack = 1e-3
 
     ''' Additional variables not explicitly stated '''
     # Friction cone scale
