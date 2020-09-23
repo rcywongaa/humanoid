@@ -375,10 +375,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     '''
     (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
             .evaluator().set_description("max F"))
-    (prog.AddLinearConstraint(ge(tau.flatten(), -np.ones(tau.shape).flatten()*1e3))
-            .evaluator().set_description("min tau"))
-    (prog.AddLinearConstraint(le(tau.flatten(), np.ones(tau.shape).flatten()*1e3))
-            .evaluator().set_description("max tau"))
+    (prog.AddBoundingBoxConstraint(-1e3, 1e3, tau)
+            .evaluator().set_description("bound tau"))
     (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
             .evaluator().set_description("max beta"))
 
