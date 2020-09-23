@@ -5,6 +5,9 @@ This implements the paper
 An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion
 by Scott Kuindersma, Frank Permenter, and Russ Tedrake
 
+Other references:
+[1]: Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
+by Scott Kuindersma, Robin Deits, Maurice Fallon, Andrés Valenzuela, Hongkai Dai, Frank Permenter, Twan Koolen, Pat Marion, Russ Tedrake
 TODO:
 Convert to time-varying y_desired and z_com
 '''
@@ -56,7 +59,6 @@ class HumanoidController(LeafSystem):
         load_atlas(self.plant)
         self.upright_context = self.plant.CreateDefaultContext()
         self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
-
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.num_positions() + self.plant.num_velocities())).get_index()
         self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
@@ -68,12 +70,9 @@ class HumanoidController(LeafSystem):
             self.input_r_idx = self.DeclareVectorInputPort("r", BasicVector(com_dim)).get_index()
             self.input_rd_idx = self.DeclareVectorInputPort("rd", BasicVector(com_dim)).get_index()
             self.input_rdd_idx = self.DeclareVectorInputPort("rdd", BasicVector(com_dim)).get_index()
-            '''
-            Use formulation in Section 4.3 of
-            Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
-            by Scott Kuindersma, Robin Deits, Maurice Fallon, Andrés Valenzuela, Hongkai Dai, Frank Permenter, Twan Koolen, Pat Marion, Russ Tedrake
-            '''
-
+            self.input_q_idx = self.DeclareVectorInputPort("q", BasicVector(self.plant.num_positions())).get_index()
+            self.input_qd_idx = self.DeclareVectorInputPort("qd", BasicVector(self.plant.num_velocities())).get_index()
+            self.input_qdd_idx = self.DeclareVectorInputPort("qdd", BasicVector(self.plant.num_velocities())).get_index()
             Q = 1.0 * np.identity(self.x_size)
             R = 0.1 * np.identity(self.u_size)
             A = np.vstack([
@@ -143,7 +142,7 @@ class HumanoidController(LeafSystem):
         # Sort joint effort limits to be the same order as tau in Eq(13)
         self.sorted_max_efforts = np.array([entry[1].effort for entry in getSortedJointLimits(self.plant)])
 
-    def create_qp1(self, plant_context, V):
+    def create_qp1(self, plant_context, V, q_des, qd_des, qdd_des):
         # Determine contact points
         lfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("l_foot"),
                 lfoot_full_contact_points, self.plant.world_frame())
@@ -243,15 +242,15 @@ class HumanoidController(LeafSystem):
         qd = self.plant.GetVelocities(plant_context)
 
         # Convert q, q_nom to generalized velocities form
-        q_err = self.plant.MapQDotToVelocity(plant_context, q-self.q_nom)
+        q_err = self.plant.MapQDotToVelocity(plant_context, q_des - q)
         print(f"Pelvis error: {q_err[0:3]}")
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
         ignored_pose_indices = {} # Ignore x position, y position
         relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
         self.relevant_pose_indices = relevant_pose_indices
-        qdd_des = -K_p*q_err - K_d*qd
-        qdd_err = qdd_des - qdd
+        qdd_ref = K_p*q_err + K_d*(qd_des - qd) + qdd_des # Eq(27) of [1]
+        qdd_err = qdd_ref - qdd
         qdd_err = qdd_err*frame_weights
         qdd_err = qdd_err[relevant_pose_indices]
         prog.AddCost(
@@ -355,13 +354,19 @@ class HumanoidController(LeafSystem):
             rd = self.EvalVectorInput(context, self.input_rd_idx).get_value()
             rdd = self.EvalVectorInput(context, self.input_rdd_idx).get_value()
             V = lambda x, u : self.V_full(x, u, r, rd, rdd)
+            q_des = self.EvalVectorInput(context, self.input_q_idx).get_value()
+            qd_des = self.EvalVectorInput(context, self.input_qd_idx).get_value()
+            qdd_des = self.EvalVectorInput(context, self.input_qdd_idx).get_value()
         else:
             y_des = self.EvalVectorInput(context, self.input_y_des_idx).get_value()
             V = lambda x, u : self.V_full(x, u, y_des)
+            q_des = self.q_nom
+            qd_des = [0.0] * self.plant.num_velocities()
+            qdd_des = [0.0] * self.plant.num_velocities()
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
         start_formulate_time = time.time()
-        prog = self.create_qp1(current_plant_context, V)
+        prog = self.create_qp1(current_plant_context, V, q_des, qd_des, qdd_des)
         print(f"Formulate time: {time.time() - start_formulate_time}s")
         start_solve_time = time.time()
         result = Solve(prog)

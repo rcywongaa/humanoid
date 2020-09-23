@@ -42,7 +42,7 @@ for i in range(N_d):
         friction_cone_components[i,j] = (n+mu*d)[:,i]
 
 class Interpolator(LeafSystem):
-    def __init__(self, r_traj, rd_traj, rdd_traj, dt_traj):
+    def __init__(self, r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj):
         LeafSystem.__init__(self)
         self.input_t_idx = self.DeclareVectorInputPort("t", BasicVector(1)).get_index()
         self.output_r_idx = self.DeclareVectorOutputPort("r", BasicVector(3), self.get_r).get_index()
@@ -50,7 +50,7 @@ class Interpolator(LeafSystem):
         self.output_rdd_idx = self.DeclareVectorOutputPort("rdd", BasicVector(3), self.get_rdd).get_index()
         self.trajectory_polynomial = PiecewisePolynomial()
         t = 0.0
-        for i in range(len(r_traj)-1):
+        for i in range(len(dt_traj)-1):
             # CubicHermite assumes samples are column vectors
             r = np.reshape(r_traj[i], (3,1))
             rd = np.reshape(rd_traj[i], (3,1))
@@ -448,9 +448,11 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     r_sol = result.GetSolution(r)
     rd_sol = result.GetSolution(rd)
     rdd_sol = result.GetSolution(rdd)
+    q_sol = reuslt.GetSolution(q)
+    v_sol = reuslt.GetSolution(v)
     dt_sol = result.GetSolution(dt)
 
-    return r_sol, rd_sol, rdd_sol, dt_sol
+    return r_sol, rd_sol, rdd_sol, q_sol, v_sol, dt_sol
 
 def main():
     builder = DiagramBuilder()
@@ -469,7 +471,8 @@ def main():
     max_time = 0.14278
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
-    r_traj, rd_traj, rdd_traj, dt_traj = calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
+    r_traj, rd_traj, rdd_traj, q_sol, v_sol, dt_traj = (
+            calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
     controller.set_name("HumanoidController")
