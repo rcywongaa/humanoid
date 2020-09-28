@@ -448,8 +448,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     r_sol = result.GetSolution(r)
     rd_sol = result.GetSolution(rd)
     rdd_sol = result.GetSolution(rdd)
-    q_sol = reuslt.GetSolution(q)
-    v_sol = reuslt.GetSolution(v)
+    q_sol = result.GetSolution(q)
+    v_sol = result.GetSolution(v)
     dt_sol = result.GetSolution(dt)
 
     return r_sol, rd_sol, rdd_sol, q_sol, v_sol, dt_sol
