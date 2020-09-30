@@ -326,21 +326,21 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
             (prog.AddConstraint(eq9b_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
                     .evaluator().set_description("Eq(9b)[{k}][{i}]"))
-    ''' Eq(10) '''
-    Q_q = 0.1 * np.identity(plant_float.num_velocities())
-    Q_v = 1.0 * np.identity(plant_float.num_velocities())
-    for k in range(N):
-        def pose_error_cost(q_v_dt):
-            q, v, dt = np.split(q_v_dt, [
-                plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_velocities()])
-            plant, context = getPlantAndContext(q, v)
-            q_err = plant.MapQDotToVelocity(context, q-q_nom)
-            return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
-        prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
-        prog.AddCost(dt[k]*(
-                + v[k].dot(Q_v).dot(v[k])
-                + rdd[k].dot(rdd[k])))
+    # ''' Eq(10) '''
+    # Q_q = 0.1 * np.identity(plant_float.num_velocities())
+    # Q_v = 1.0 * np.identity(plant_float.num_velocities())
+    # for k in range(N):
+        # def pose_error_cost(q_v_dt):
+            # q, v, dt = np.split(q_v_dt, [
+                # plant_float.num_positions(),
+                # plant_float.num_positions() + plant_float.num_velocities()])
+            # plant, context = getPlantAndContext(q, v)
+            # q_err = plant.MapQDotToVelocity(context, q-q_nom)
+            # return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
+        # prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
+        # prog.AddCost(dt[k]*(
+                # + v[k].dot(Q_v).dot(v[k])
+                # + rdd[k].dot(rdd[k])))
 
     ''' Additional constraints not explicitly stated '''
     ''' Constrain initial pose '''
