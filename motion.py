@@ -481,7 +481,7 @@ def main():
     builder.Connect(plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), plant.get_actuation_input_port())
 
-    interpolator = builder.AddSystem(Interpolator(r_traj, rd_traj, rdd_traj, dt_traj))
+    interpolator = builder.AddSystem(Interpolator(r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj))
     interpolator.set_name("Interpolator")
     ''' Connect interpolator to controller '''
     builder.Connect(interpolator.GetOutputPort("r"), controller.GetInputPort("r"))
