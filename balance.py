@@ -344,11 +344,6 @@ class HumanoidController(LeafSystem):
         if not self.start_time:
             self.start_time = context.get_time()
 
-        ## Start controller only after foot makes contact with ground
-        if context.get_time() - self.start_time < 0.02:
-            output.SetFromVector(np.zeros(30))
-            return
-
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         if self.is_wbc:
             r = self.EvalVectorInput(context, self.input_r_des_idx).get_value()
@@ -366,49 +361,54 @@ class HumanoidController(LeafSystem):
             vd_des = [0.0] * self.plant.num_velocities()
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
-        start_formulate_time = time.time()
-        prog = self.create_qp1(current_plant_context, V, q_des, v_des, vd_des)
-        print(f"Formulate time: {time.time() - start_formulate_time}s")
-        start_solve_time = time.time()
-        result = Solve(prog)
-        print(f"Solve time: {time.time() - start_solve_time}s")
-        if not result.is_success():
-            print(f"FAILED")
-            pdb.set_trace()
-            exit(-1)
-        print(f"Cost: {result.get_optimal_cost()}")
-        qdd_sol = result.GetSolution(self.qdd)
-        lambd_sol = result.GetSolution(self.lambd)
-        x_sol = result.GetSolution(self.x)
-        u_sol = result.GetSolution(self.u)
-        beta_sol = result.GetSolution(self.beta)
-        eta_sol = result.GetSolution(self.eta)
 
-        com, comd, comdd = self.calcCOM(current_plant_context, result)
+        try:
+            start_formulate_time = time.time()
+            prog = self.create_qp1(current_plant_context, V, q_des, v_des, vd_des)
+            print(f"Formulate time: {time.time() - start_formulate_time}s")
+            start_solve_time = time.time()
+            result = Solve(prog)
+            print(f"Solve time: {time.time() - start_solve_time}s")
+            if not result.is_success():
+                print(f"FAILED")
+                output.SetFromVector([0]*self.plant.num_actuated_dofs())
+            print(f"Cost: {result.get_optimal_cost()}")
+            qdd_sol = result.GetSolution(self.qdd)
+            lambd_sol = result.GetSolution(self.lambd)
+            x_sol = result.GetSolution(self.x)
+            u_sol = result.GetSolution(self.u)
+            beta_sol = result.GetSolution(self.beta)
+            eta_sol = result.GetSolution(self.eta)
 
-        # print(f"comdd z: {comdd[2]}")
-        # self.plant.EvalBodyPoseInWorld(current_plant_context, self.plant.GetBodyByName("pelvis")).rotation().ToQuaternion().xyz()
-        print(f"pelvis angular position = {Quaternion(normalize(q_v[0:4])).xyz()}")
-        print(f"pelvis angular velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3]}")
-        print(f"pelvis angular acceleration = {qdd_sol[0:3]}")
-        print(f"pelvis translational position = {q_v[4:7]}")
-        print(f"pelvis translational velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3 : FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 6]}")
-        print(f"pelvis translational acceleration = {qdd_sol[3:6]}")
-        # print(f"beta = {beta_sol}")
-        # print(f"lambda z = {lambd_sol[2::3]}")
-        print(f"Total force z = {np.sum(lambd_sol[2::3])}")
+            com, comd, comdd = self.calcCOM(current_plant_context, result)
 
-        tau = self.tau(qdd_sol, lambd_sol)
-        interested_joints = [
-                "back_bky",
-                "l_leg_hpy",
-                "r_leg_hpy"
-        ]
-        print(f"tau = {tau[getActuatorIndices(self.plant, interested_joints)]}")
-        print(f"joint angles = {getJointValues(self.plant, interested_joints, current_plant_context)}")
+            # print(f"comdd z: {comdd[2]}")
+            # self.plant.EvalBodyPoseInWorld(current_plant_context, self.plant.GetBodyByName("pelvis")).rotation().ToQuaternion().xyz()
+            print(f"pelvis angular position = {Quaternion(normalize(q_v[0:4])).xyz()}")
+            print(f"pelvis angular velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3]}")
+            print(f"pelvis angular acceleration = {qdd_sol[0:3]}")
+            print(f"pelvis translational position = {q_v[4:7]}")
+            print(f"pelvis translational velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3 : FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 6]}")
+            print(f"pelvis translational acceleration = {qdd_sol[3:6]}")
+            # print(f"beta = {beta_sol}")
+            # print(f"lambda z = {lambd_sol[2::3]}")
+            print(f"Total force z = {np.sum(lambd_sol[2::3])}")
 
-        output.SetFromVector(tau)
-        print("========================================")
+            tau = self.tau(qdd_sol, lambd_sol)
+            interested_joints = [
+                    "back_bky",
+                    "l_leg_hpy",
+                    "r_leg_hpy"
+            ]
+            print(f"tau = {tau[getActuatorIndices(self.plant, interested_joints)]}")
+            print(f"joint angles = {getJointValues(self.plant, interested_joints, current_plant_context)}")
+
+            output.SetFromVector(tau)
+            print("========================================")
+        except Exception as e:
+            print(f"ERROR : {e}")
+            output.SetFromVector([0]*self.plant.num_actuated_dofs())
+
 
     def calcCOM(self, current_plant_context, result):
         qdd_sol = result.GetSolution(self.qdd)
