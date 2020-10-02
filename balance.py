@@ -67,12 +67,12 @@ class HumanoidController(LeafSystem):
             com_dim = 3
             self.x_size = 2*com_dim
             self.u_size = com_dim
-            self.input_r_idx = self.DeclareVectorInputPort("r", BasicVector(com_dim)).get_index()
-            self.input_rd_idx = self.DeclareVectorInputPort("rd", BasicVector(com_dim)).get_index()
-            self.input_rdd_idx = self.DeclareVectorInputPort("rdd", BasicVector(com_dim)).get_index()
-            self.input_q_idx = self.DeclareVectorInputPort("q", BasicVector(self.plant.num_positions())).get_index()
-            self.input_qd_idx = self.DeclareVectorInputPort("qd", BasicVector(self.plant.num_velocities())).get_index()
-            self.input_qdd_idx = self.DeclareVectorInputPort("qdd", BasicVector(self.plant.num_velocities())).get_index()
+            self.input_r_des_idx = self.DeclareVectorInputPort("r_des", BasicVector(com_dim)).get_index()
+            self.input_rd_des_idx = self.DeclareVectorInputPort("rd_des", BasicVector(com_dim)).get_index()
+            self.input_rdd_des_idx = self.DeclareVectorInputPort("rdd_des", BasicVector(com_dim)).get_index()
+            self.input_q_des_idx = self.DeclareVectorInputPort("q_des", BasicVector(self.plant.num_positions())).get_index()
+            self.input_v_des_idx = self.DeclareVectorInputPort("v_des", BasicVector(self.plant.num_velocities())).get_index()
+            self.input_vd_des_idx = self.DeclareVectorInputPort("vd_des", BasicVector(self.plant.num_velocities())).get_index()
             Q = 1.0 * np.identity(self.x_size)
             R = 0.1 * np.identity(self.u_size)
             A = np.vstack([
@@ -83,15 +83,16 @@ class HumanoidController(LeafSystem):
                 1*np.identity(com_dim)])
             K, S = LinearQuadraticRegulator(A, B_1, Q, R)
             def V_full(x, u, r, rd, rdd):
-                x_bar = x - np.vstack([r, rd])
+                x_bar = x - np.concatenate([r, rd])
                 u_bar = u - rdd
                 '''
                 xd_bar = d(x - [r, rd].T)/dt
                         = xd - [rd, rdd].T
                         = Ax + Bu - [rd, rdd].T
                 '''
-                xd_bar = A.dot(x) + B.dot(u) - np.concatenate([rd, rdd])
+                xd_bar = A.dot(x) + B_1.dot(u) - np.concatenate([rd, rdd])
                 return x_bar.T.dot(Q).dot(x_bar) + u_bar.T.dot(R).dot(u_bar) + 2*x_bar.T.dot(S).dot(xd_bar)
+            self.V_full = V_full
 
         else:
             # Only x, y coordinates of COM is considered
@@ -142,7 +143,7 @@ class HumanoidController(LeafSystem):
         # Sort joint effort limits to be the same order as tau in Eq(13)
         self.sorted_max_efforts = np.array([entry[1].effort for entry in getSortedJointLimits(self.plant)])
 
-    def create_qp1(self, plant_context, V, q_des, qd_des, qdd_des):
+    def create_qp1(self, plant_context, V, q_des, v_des, vd_des):
         # Determine contact points
         lfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("l_foot"),
                 lfoot_full_contact_points, self.plant.world_frame())
@@ -249,7 +250,7 @@ class HumanoidController(LeafSystem):
         ignored_pose_indices = {} # Ignore x position, y position
         relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
         self.relevant_pose_indices = relevant_pose_indices
-        qdd_ref = K_p*q_err + K_d*(qd_des - qd) + qdd_des # Eq(27) of [1]
+        qdd_ref = K_p*q_err + K_d*(v_des - qd) + vd_des # Eq(27) of [1]
         qdd_err = qdd_ref - qdd
         qdd_err = qdd_err*frame_weights
         qdd_err = qdd_err[relevant_pose_indices]
@@ -350,23 +351,23 @@ class HumanoidController(LeafSystem):
 
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         if self.is_wbc:
-            r = self.EvalVectorInput(context, self.input_r_idx).get_value()
-            rd = self.EvalVectorInput(context, self.input_rd_idx).get_value()
-            rdd = self.EvalVectorInput(context, self.input_rdd_idx).get_value()
+            r = self.EvalVectorInput(context, self.input_r_des_idx).get_value()
+            rd = self.EvalVectorInput(context, self.input_rd_des_idx).get_value()
+            rdd = self.EvalVectorInput(context, self.input_rdd_des_idx).get_value()
             V = lambda x, u : self.V_full(x, u, r, rd, rdd)
-            q_des = self.EvalVectorInput(context, self.input_q_idx).get_value()
-            qd_des = self.EvalVectorInput(context, self.input_qd_idx).get_value()
-            qdd_des = self.EvalVectorInput(context, self.input_qdd_idx).get_value()
+            q_des = self.EvalVectorInput(context, self.input_q_des_idx).get_value()
+            v_des = self.EvalVectorInput(context, self.input_v_des_idx).get_value()
+            vd_des = self.EvalVectorInput(context, self.input_vd_des_idx).get_value()
         else:
             y_des = self.EvalVectorInput(context, self.input_y_des_idx).get_value()
             V = lambda x, u : self.V_full(x, u, y_des)
             q_des = self.q_nom
-            qd_des = [0.0] * self.plant.num_velocities()
-            qdd_des = [0.0] * self.plant.num_velocities()
+            v_des = [0.0] * self.plant.num_velocities()
+            vd_des = [0.0] * self.plant.num_velocities()
         current_plant_context = self.plant.CreateDefaultContext()
         self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
         start_formulate_time = time.time()
-        prog = self.create_qp1(current_plant_context, V, q_des, qd_des, qdd_des)
+        prog = self.create_qp1(current_plant_context, V, q_des, v_des, vd_des)
         print(f"Formulate time: {time.time() - start_formulate_time}s")
         start_solve_time = time.time()
         result = Solve(prog)

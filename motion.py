@@ -10,7 +10,8 @@ from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF, M
 from pydrake.all import Quaternion
-from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp
+from pydrake.all import Multiplexer
+from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
@@ -41,43 +42,37 @@ for i in range(N_d):
     for j in range(num_contact_points):
         friction_cone_components[i,j] = (n+mu*d)[:,i]
 
-class Interpolator(LeafSystem):
-    def __init__(self, r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj):
-        LeafSystem.__init__(self)
-        self.input_t_idx = self.DeclareVectorInputPort("t", BasicVector(1)).get_index()
-        self.output_r_idx = self.DeclareVectorOutputPort("r", BasicVector(3), self.get_r).get_index()
-        self.output_rd_idx = self.DeclareVectorOutputPort("rd", BasicVector(3), self.get_rd).get_index()
-        self.output_rdd_idx = self.DeclareVectorOutputPort("rdd", BasicVector(3), self.get_rdd).get_index()
-        self.trajectory_polynomial = PiecewisePolynomial()
-        t = 0.0
-        for i in range(len(dt_traj)-1):
-            # CubicHermite assumes samples are column vectors
-            r = np.reshape(r_traj[i], (3,1))
-            rd = np.reshape(rd_traj[i], (3,1))
-            rdd = np.reshape(rdd_traj[i], (3,1))
-            dt = np.reshape(dt_traj[i+1], (3,1))
-            r_next = np.reshape(r_traj[i+1], (3,1))
-            rd_next = np.reshape(rd_traj[i+1], (3,1))
-            rdd_next = np.reshape(rdd_traj[i+1], (3,1))
-            self.trajectory_polynomial.ConcatenateInTime(
-                    CubicHermite(
-                        breaks=[t, t+dt],
-                        samples=np.hstack([r, r_next],
-                        sample_dot=[rd, rd_next])))
-            t += dt
-        self.trajectory = PiecewiseTrajectory(self.trajectory_polynomial)
+def create_q_interpolation(plant, context, q_traj, v_traj, dt_traj):
+    t_traj = np.cumsum(dt_traj)
+    quaternions = [Quaternion(q[0:4] / np.linalg.norm(q[0:4])) for q in q_traj]
+    quaternion_poly = PiecewiseQuaternionSlerp(t_traj, quaternions)
+    position_poly = PiecewisePolynomial.FirstOrderHold(t_traj, q_traj[:, 4:].T)
+    return quaternion_poly, position_poly
+    # qd_poly = q_poly.derivative()
+    # qdd_poly = qd_poly.derivative()
+    # return q_poly, v_poly, vd_poly
 
-    def get_r(self, context, output):
-        t = self.EvalVectorInput(context, self.input_t_idx).get_value()
-        output.SetFromVector(self.trajectory.get_position(t))
-
-    def get_rd(self, context, output):
-        t = self.EvalVectorInput(context, self.input_t_idx).get_value()
-        output.SetFromVector(self.trajectory.get_velocity(t))
-
-    def get_rdd(self, context, output):
-        t = self.EvalVectorInput(context, self.input_t_idx).get_value()
-        output.SetFromVector(self.trajectory.get_acceleration(t))
+def create_r_interpolation(r_traj, rd_traj, rdd_traj, dt_traj):
+    r_poly = PiecewisePolynomial()
+    t = 0.0
+    for i in range(len(dt_traj)-1):
+        # CubicHermite assumes samples are column vectors
+        r = np.array([r_traj[i]]).T
+        rd = np.array([rd_traj[i]]).T
+        rdd = np.array([rdd_traj[i]]).T
+        dt = dt_traj[i+1]
+        r_next = np.array([r_traj[i+1]]).T
+        rd_next = np.array([rd_traj[i+1]]).T
+        rdd_next = np.array([rdd_traj[i+1]]).T
+        r_poly.ConcatenateInTime(
+                PiecewisePolynomial.CubicHermite(
+                    breaks=[t, t+dt],
+                    samples=np.hstack([r, r_next]),
+                    samples_dot=np.hstack([rd, rd_next])))
+        t += dt
+    rd_poly = r_poly.derivative()
+    rdd_poly = rd_poly.derivative()
+    return r_poly, rd_poly, rdd_poly
 
 def toTauj(tau_k):
     return np.hstack([np.zeros((num_contact_points, 2)), np.reshape(tau_k, (num_contact_points, 1))])
@@ -472,7 +467,7 @@ def main():
     max_time = 0.15
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
-    r_traj, rd_traj, rdd_traj, q_sol, v_sol, dt_traj = (
+    r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = (
             calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
@@ -652,12 +647,37 @@ def main():
          1.02680202e-35, -1.96355950e-37, -1.96355950e-37]])
     dt_traj = np.array([7.49833686e-41, 3.92185094e-02, 1.38525033e-02, 6.73738838e-03,
        5.98141963e-03, 7.26100640e-03])
-    interpolator = builder.AddSystem(Interpolator(r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj))
-    interpolator.set_name("Interpolator")
-    ''' Connect interpolator to controller '''
-    builder.Connect(interpolator.GetOutputPort("r"), controller.GetInputPort("r"))
-    builder.Connect(interpolator.GetOutputPort("rd"), controller.GetInputPort("rd"))
-    builder.Connect(interpolator.GetOutputPort("rdd"), controller.GetInputPort("rdd"))
+
+    quaternion_poly, position_poly = create_q_interpolation(plant, plant_context, q_traj, v_traj, dt_traj)
+
+    quaternion_source = builder.AddSystem(TrajectorySource(quaternion_poly))
+    position_source = builder.AddSystem(TrajectorySource(position_poly))
+    q_multiplexer = builder.AddSystem(Multiplexer([4, plant.num_positions() - 4]))
+    builder.Connect(quaternion_source.get_output_port(), q_multiplexer.get_input_port(0))
+    builder.Connect(position_source.get_output_port(), q_multiplexer.get_input_port(1))
+    builder.Connect(q_multiplexer.get_output_port(0), controller.GetInputPort("q_des"))
+
+    positiond_source = builder.AddSystem(TrajectorySource(position_poly.MakeDerivative()))
+    quaterniond_source = builder.AddSystem(TrajectorySource(quaternion_poly.MakeDerivative()))
+    v_multiplexer = builder.AddSystem(Multiplexer([3, plant.num_velocities() - 3]))
+    builder.Connect(quaterniond_source.get_output_port(), v_multiplexer.get_input_port(0))
+    builder.Connect(positiond_source.get_output_port(), v_multiplexer.get_input_port(1))
+    builder.Connect(v_multiplexer.get_output_port(0), controller.GetInputPort("v_des"))
+
+    positiondd_source = builder.AddSystem(TrajectorySource(position_poly.MakeDerivative().MakeDerivative()))
+    quaterniondd_source = builder.AddSystem(TrajectorySource(quaternion_poly.MakeDerivative().MakeDerivative()))
+    vd_multiplexer = builder.AddSystem(Multiplexer([3, plant.num_velocities() - 3]))
+    builder.Connect(quaterniondd_source.get_output_port(), vd_multiplexer.get_input_port(0))
+    builder.Connect(positiondd_source.get_output_port(), vd_multiplexer.get_input_port(1))
+    builder.Connect(vd_multiplexer.get_output_port(0), controller.GetInputPort("vd_des"))
+
+    r_poly, rd_poly, rdd_poly = create_r_interpolation(r_traj, rd_traj, rdd_traj, dt_traj)
+    r_source = builder.AddSystem(TrajectorySource(r_poly))
+    rd_source = builder.AddSystem(TrajectorySource(rd_poly))
+    rdd_source = builder.AddSystem(TrajectorySource(rdd_poly))
+    builder.Connect(r_source.get_output_port(0), controller.GetInputPort("r_des"))
+    builder.Connect(rd_source.get_output_port(0), controller.GetInputPort("rd_des"))
+    builder.Connect(rdd_source.get_output_port(0), controller.GetInputPort("rdd_des"))
 
     ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
     ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
