@@ -516,7 +516,7 @@ def main():
 
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.1)
-    simulator.AdvanceTo(5.0)
+    simulator.AdvanceTo(max_time)
 
 if __name__ == "__main__":
     main()
