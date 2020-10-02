@@ -421,7 +421,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
 
     solver = IpoptSolver()
     options = SolverOptions()
-    options.SetOption(solver.solver_id(), "max_iter", 10000)
+    # options.SetOption(solver.solver_id(), "max_iter", 50000)
     # This doesn't seem to do anything...
     # options.SetOption(CommonSolverOption.kPrintToConsole, True)
     start_solve_time = time.time()
@@ -467,8 +467,9 @@ def main():
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
 
-    num_knot_points = 4
-    max_time = 0.14278
+    num_knot_points = 6
+    # max_time = 0.14278
+    max_time = 0.15
 
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
     r_traj, rd_traj, rdd_traj, q_sol, v_sol, dt_traj = (
