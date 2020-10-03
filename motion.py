@@ -300,7 +300,11 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         for i in range(num_contact_points):
             ''' Assume flat ground for now... '''
             ''' Eq(9a) '''
-            def eq9a_lhs(F_c_cprev):
+            def eq9a_lhs(F_c_cprev, i=i):
+                '''
+                i=i is used to capture the outer scope i variable
+                https://stackoverflow.com/a/2295372/3177701
+                '''
                 F, c, c_prev = np.split(F_c_cprev, [
                     contact_dim,
                     contact_dim + contact_dim])
@@ -311,7 +315,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             (prog.AddConstraint(eq9a_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
                     .evaluator().set_description("Eq(9a)[{k}][{i}]"))
             ''' Eq(9b) '''
-            def eq9b_lhs(F_c_cprev):
+            def eq9b_lhs(F_c_cprev, i=i):
                 F, c, c_prev = np.split(F_c_cprev, [
                     contact_dim,
                     contact_dim + contact_dim])
