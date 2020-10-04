@@ -457,7 +457,7 @@ def main():
     plant_context = plant.CreateDefaultContext()
 
     q_init = plant.GetPositions(plant_context)
-    q_init[6] = 1.0 # Avoid initializing with ground penetration
+    q_init[6] = 0.95 # Avoid initializing with ground penetration
     q_final = q_init.copy()
     # q_final[4] = 0.1 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
