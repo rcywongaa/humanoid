@@ -406,7 +406,6 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     c_guess = np.array([
         get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(N)])
     for i in range(N):
-        # pdb.set_trace()
         assert((eq7i(np.concatenate([q_guess[i], v_guess[i], c_guess[i]])) == 0.0).all())
     prog.SetDecisionVariableValueInVector(c, c_guess, initial_guess)
 
@@ -426,9 +425,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     start_solve_time = time.time()
     print(f"Start solving...")
     result = solver.Solve(prog, initial_guess, options) # Currently takes around 30 mins
-    print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
+    print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()} Success: {result.is_success()}")
     if not result.is_success():
-        print(f"FAILED")
         print(result.GetInfeasibleConstraintNames(prog))
         q_sol = result.GetSolution(q)
         v_sol = result.GetSolution(v)
@@ -443,7 +441,6 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         hd_sol = result.GetSolution(hd)
         beta_sol = result.GetSolution(beta)
         pdb.set_trace()
-    print(f"SUCCESS")
     r_sol = result.GetSolution(r)
     rd_sol = result.GetSolution(rd)
     rdd_sol = result.GetSolution(rdd)
