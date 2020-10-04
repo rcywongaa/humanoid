@@ -53,7 +53,6 @@ class HumanoidController(LeafSystem):
     '''
     def __init__(self, is_wbc=False):
         self.is_wbc = is_wbc
-        self.start_time = None
         LeafSystem.__init__(self)
         self.plant = MultibodyPlant(mbp_time_step)
         load_atlas(self.plant)
@@ -344,9 +343,6 @@ class HumanoidController(LeafSystem):
         return prog
 
     def calcTorqueOutput(self, context, output):
-        if not self.start_time:
-            self.start_time = context.get_time()
-
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         if self.is_wbc:
             r = self.EvalVectorInput(context, self.input_r_des_idx).get_value()
