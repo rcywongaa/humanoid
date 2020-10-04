@@ -455,7 +455,6 @@ def main():
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
     load_atlas(plant, add_ground=True)
     plant_context = plant.CreateDefaultContext()
-    set_atlas_initial_pose(plant, plant_context)
 
     q_init = plant.GetPositions(plant_context)
     q_init[6] = 1.0 # Avoid initializing with ground penetration
@@ -514,6 +513,7 @@ def main():
     diagram = builder.Build()
     diagram_context = diagram.CreateDefaultContext()
     plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
+    plant.SetPositions(plant_context, q_init)
 
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.1)
