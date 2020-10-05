@@ -462,12 +462,11 @@ def main():
     q_init = plant.GetPositions(plant_context)
     q_init[6] = 0.95 # Avoid initializing with ground penetration
     q_final = q_init.copy()
-    # q_final[4] = 0.1 # x position of pelvis
+    q_final[4] = 0.5 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
 
-    num_knot_points = 6
-    # max_time = 0.14278
-    max_time = 0.15
+    num_knot_points = 20
+    max_time = 0.5
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
