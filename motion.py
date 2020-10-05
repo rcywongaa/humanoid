@@ -19,6 +19,7 @@ from balance import HumanoidController
 import numpy as np
 import time
 import pdb
+import pickle
 
 mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
@@ -468,9 +469,17 @@ def main():
     # max_time = 0.14278
     max_time = 0.15
 
+    export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
+
     print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
     r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = (
             calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
+
+    with open(export_filename, 'wb') as f:
+        pickle.dump([r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj], f)
+
+    with open(export_filename, 'rb') as f:
+        r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = pickle.load(f)
 
     controller = builder.AddSystem(HumanoidController(is_wbc=True))
     controller.set_name("HumanoidController")
