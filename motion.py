@@ -465,8 +465,8 @@ def main():
     q_final[4] = 0.5 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
 
-    num_knot_points = 20
-    max_time = 0.5
+    num_knot_points = 30
+    max_time = 1.0
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
