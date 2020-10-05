@@ -204,7 +204,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         for i in range(num_contact_points):
             beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
             (prog.AddLinearConstraint(eq(Fj[i], beta_v))
-                    .evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint"))
+                    .evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint[{i}]"))
         ''' Constrain beta positive '''
         for b in beta_k.flat:
             (prog.AddLinearConstraint(b >= 0.0)
@@ -346,7 +346,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
     (prog.AddLinearConstraint(eq(q[0], q_init))
             .evaluator().set_description("initial pose"))
     ''' Constrain initial velocity '''
-    prog.AddLinearConstraint(eq(v[0], 0.0))
+    (prog.AddLinearConstraint(eq(v[0], 0.0))
+            .evaluator().set_description("initial velocity"))
     ''' Constrain final pose '''
     if pelvis_only:
         (prog.AddLinearConstraint(eq(q[-1, 4:7], q_final[4:7]))
@@ -355,7 +356,8 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         (prog.AddLinearConstraint(eq(q[-1], q_final))
                 .evaluator().set_description("final pose"))
     ''' Constrain final velocity '''
-    prog.AddLinearConstraint(eq(v[-1], 0.0))
+    (prog.AddLinearConstraint(eq(v[-1], 0.0))
+            .evaluator().set_description("final velocity"))
     ''' Constrain time taken '''
     (prog.AddLinearConstraint(np.sum(dt) <= T)
             .evaluator().set_description("max time"))
