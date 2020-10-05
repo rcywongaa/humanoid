@@ -168,14 +168,20 @@ class HumanoidController(LeafSystem):
         C_7 = self.plant.CalcBiasTerm(plant_context) - self.plant.CalcGravityGeneralizedForces(plant_context)
         B_7 = self.B_7
 
-        Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
-                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+        # TODO: Double check
+        Phi_foots = []
+        if N_c_lfoot:
+            Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
+                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
+                    lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+            Phi_foots.append(Phi_lfoot)
 
-        Phi_rfoot = self.plant.CalcJacobianTranslationalVelocity(
-                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-        Phi = np.vstack([Phi_lfoot, Phi_rfoot])
+        if N_c_rfoot:
+            Phi_rfoot = self.plant.CalcJacobianTranslationalVelocity(
+                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
+                    rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+            Phi_foots.append(Phi_rfoot)
+        Phi = np.vstack(Phi_foots)
 
         ''' Eq(8) '''
         v_idx_act = self.v_idx_act
@@ -269,13 +275,19 @@ class HumanoidController(LeafSystem):
 
         ''' Eq(12) - 0.005s '''
         alpha = 0.1
-        Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
-                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-        Jd_qd_rfoot = self.plant.CalcBiasTranslationalAcceleration(
-                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-        Jd_qd = np.concatenate([Jd_qd_lfoot.flatten(), Jd_qd_rfoot.flatten()])
+        # TODO: Double check
+        Jd_qd_foots = []
+        if N_c_lfoot:
+            Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
+                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
+                    lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+            Jd_qd_foots.append(Jd_qd_lfoot.flatten())
+        if N_c_rfoot:
+            Jd_qd_rfoot = self.plant.CalcBiasTranslationalAcceleration(
+                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
+                    rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
+            Jd_qd_foots.append(Jd_qd_rfoot.flatten())
+        Jd_qd = np.concatenate(Jd_qd_foots)
         assert(Jd_qd.shape == (N_c*3,))
         eq12_lhs = J.dot(qdd) + Jd_qd
         eq12_rhs = -alpha*J.dot(qd) + eta
