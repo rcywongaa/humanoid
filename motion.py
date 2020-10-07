@@ -521,13 +521,20 @@ def main():
     ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
     ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
     diagram = builder.Build()
-    diagram_context = diagram.CreateDefaultContext()
-    plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
-    plant.SetPositions(plant_context, q_init)
 
-    simulator = Simulator(diagram, diagram_context)
-    simulator.set_target_realtime_rate(0.1)
-    simulator.AdvanceTo(max_time)
+    frame_idx = 0
+    while True:
+        print(f"Frame: {frame_idx}")
+        diagram_context = diagram.CreateDefaultContext()
+        plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
+        plant.SetPositions(plant_context, q_traj[frame_idx])
+
+        simulator = Simulator(diagram, diagram_context)
+        simulator.set_target_realtime_rate(0.0)
+        simulator.AdvanceTo(0)
+
+        frame_idx = (frame_idx + 1) % q_traj.shape[0]
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
