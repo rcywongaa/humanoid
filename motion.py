@@ -351,7 +351,7 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             .evaluator().set_description("initial velocity"))
     ''' Constrain final pose '''
     if pelvis_only:
-        (prog.AddLinearConstraint(eq(q[-1, 4:7], q_final[4:7]))
+        (prog.AddLinearConstraint(eq(q[-1, 0:7], q_final[0:7]))
                 .evaluator().set_description("final pose"))
     else:
         (prog.AddLinearConstraint(eq(q[-1], q_final))
