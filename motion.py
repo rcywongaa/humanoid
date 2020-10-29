@@ -25,6 +25,8 @@ mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
+PLAYBACK_ONLY = False
+ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
 MAX_GROUND_PENETRATION = 1e-2
 
 num_contact_points = lfoot_full_contact_points.shape[1]+rfoot_full_contact_points.shape[1]
@@ -219,35 +221,36 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
             (prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
                     .evaluator().set_description(f"Eq(7k)[{k}] friction torque lower limit"))
 
-        ''' Assume flat ground for now... '''
-        def get_contact_positions_z(q, v):
-            return get_contact_positions(q, v)[2,:]
-        ''' Eq(8a) '''
-        def eq8a_lhs(q_v_F):
-            q, v, F = np.split(q_v_F, [
-                plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_velocities()])
-            Fj = np.reshape(F, (num_contact_points, 3))
-            return [Fj[:,2].dot(get_contact_positions_z(q, v))] # Constraint functions must output vectors
-        (prog.AddConstraint(eq8a_lhs, lb=[-slack], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
-                .evaluator().set_description(f"Eq(8a)[{k}]"))
-        ''' Eq(8b) '''
-        def eq8b_lhs(q_v_tau):
-            q, v, tau = np.split(q_v_tau, [
-                plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_velocities()])
-            tauj = toTauj(tau)
-            return (tauj**2).T.dot(get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
-        (prog.AddConstraint(eq8b_lhs, lb=[-slack]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
-                .evaluator().set_description(f"Eq(8b)[{k}]"))
-        ''' Eq(8c) '''
-        (prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-                .evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero"))
-        def eq8c_2(q_v):
-            q, v = np.split(q_v, [plant_float.num_positions()])
-            return get_contact_positions_z(q, v)
-        (prog.AddConstraint(eq8c_2, lb=[-MAX_GROUND_PENETRATION]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=np.concatenate([q[k], v[k]]))
-                .evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero"))
+        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+            ''' Assume flat ground for now... '''
+            def get_contact_positions_z(q, v):
+                return get_contact_positions(q, v)[2,:]
+            ''' Eq(8a) '''
+            def eq8a_lhs(q_v_F):
+                q, v, F = np.split(q_v_F, [
+                    plant_float.num_positions(),
+                    plant_float.num_positions() + plant_float.num_velocities()])
+                Fj = np.reshape(F, (num_contact_points, 3))
+                return [Fj[:,2].dot(get_contact_positions_z(q, v))] # Constraint functions must output vectors
+            (prog.AddConstraint(eq8a_lhs, lb=[-slack], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
+                    .evaluator().set_description(f"Eq(8a)[{k}]"))
+            ''' Eq(8b) '''
+            def eq8b_lhs(q_v_tau):
+                q, v, tau = np.split(q_v_tau, [
+                    plant_float.num_positions(),
+                    plant_float.num_positions() + plant_float.num_velocities()])
+                tauj = toTauj(tau)
+                return (tauj**2).T.dot(get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
+            (prog.AddConstraint(eq8b_lhs, lb=[-slack]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
+                    .evaluator().set_description(f"Eq(8b)[{k}]"))
+            ''' Eq(8c) '''
+            (prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
+                    .evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero"))
+            def eq8c_2(q_v):
+                q, v = np.split(q_v, [plant_float.num_positions()])
+                return get_contact_positions_z(q, v)
+            (prog.AddConstraint(eq8c_2, lb=[-MAX_GROUND_PENETRATION]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=np.concatenate([q[k], v[k]]))
+                    .evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero"))
 
     for k in range(1, N):
         ''' Eq(7d) '''
@@ -298,34 +301,36 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
         Fj = np.reshape(F[k], (num_contact_points, 3))
         cj = np.reshape(c[k], (num_contact_points, 3))
         cj_prev = np.reshape(c[k-1], (num_contact_points, 3))
-        for i in range(num_contact_points):
-            ''' Assume flat ground for now... '''
-            ''' Eq(9a) '''
-            def eq9a_lhs(F_c_cprev, i=i):
-                '''
-                i=i is used to capture the outer scope i variable
-                https://stackoverflow.com/a/2295372/3177701
-                '''
-                F, c, c_prev = np.split(F_c_cprev, [
-                    contact_dim,
-                    contact_dim + contact_dim])
-                Fj = np.reshape(F, (num_contact_points, 3))
-                cj = np.reshape(c, (num_contact_points, 3))
-                cj_prev = np.reshape(c_prev, (num_contact_points, 3))
-                return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
-            (prog.AddConstraint(eq9a_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
-                    .evaluator().set_description("Eq(9a)[{k}][{i}]"))
-            ''' Eq(9b) '''
-            def eq9b_lhs(F_c_cprev, i=i):
-                F, c, c_prev = np.split(F_c_cprev, [
-                    contact_dim,
-                    contact_dim + contact_dim])
-                Fj = np.reshape(F, (num_contact_points, 3))
-                cj = np.reshape(c, (num_contact_points, 3))
-                cj_prev = np.reshape(c_prev, (num_contact_points, 3))
-                return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
-            (prog.AddConstraint(eq9b_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
-                    .evaluator().set_description("Eq(9b)[{k}][{i}]"))
+
+        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+            for i in range(num_contact_points):
+                ''' Assume flat ground for now... '''
+                ''' Eq(9a) '''
+                def eq9a_lhs(F_c_cprev, i=i):
+                    '''
+                    i=i is used to capture the outer scope i variable
+                    https://stackoverflow.com/a/2295372/3177701
+                    '''
+                    F, c, c_prev = np.split(F_c_cprev, [
+                        contact_dim,
+                        contact_dim + contact_dim])
+                    Fj = np.reshape(F, (num_contact_points, 3))
+                    cj = np.reshape(c, (num_contact_points, 3))
+                    cj_prev = np.reshape(c_prev, (num_contact_points, 3))
+                    return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
+                (prog.AddConstraint(eq9a_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
+                        .evaluator().set_description("Eq(9a)[{k}][{i}]"))
+                ''' Eq(9b) '''
+                def eq9b_lhs(F_c_cprev, i=i):
+                    F, c, c_prev = np.split(F_c_cprev, [
+                        contact_dim,
+                        contact_dim + contact_dim])
+                    Fj = np.reshape(F, (num_contact_points, 3))
+                    cj = np.reshape(c, (num_contact_points, 3))
+                    cj_prev = np.reshape(c_prev, (num_contact_points, 3))
+                    return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
+                (prog.AddConstraint(eq9b_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
+                        .evaluator().set_description("Eq(9b)[{k}][{i}]"))
     # ''' Eq(10) '''
     # Q_q = 0.1 * np.identity(plant_float.num_velocities())
     # Q_v = 1.0 * np.identity(plant_float.num_velocities())
@@ -470,12 +475,13 @@ def main():
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
-    print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
-    r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = (
-            calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
+    if not PLAYBACK_ONLY:
+        print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
+        r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = (
+                calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
 
-    with open(export_filename, 'wb') as f:
-        pickle.dump([r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj], f)
+        with open(export_filename, 'wb') as f:
+            pickle.dump([r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj], f)
 
     with open(export_filename, 'rb') as f:
         r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = pickle.load(f)
