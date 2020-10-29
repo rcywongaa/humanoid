@@ -15,6 +15,7 @@ from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuate
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
+from pydrake.all import Quaternion_, AutoDiffXd
 from balance import HumanoidController
 import numpy as np
 import time
@@ -25,6 +26,7 @@ mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 
+epsilon = 1e-9
 PLAYBACK_ONLY = False
 ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
 MAX_GROUND_PENETRATION = 1e-2
@@ -79,6 +81,18 @@ def create_r_interpolation(r_traj, rd_traj, rdd_traj, dt_traj):
 
 def toTauj(tau_k):
     return np.hstack([np.zeros((num_contact_points, 2)), np.reshape(tau_k, (num_contact_points, 1))])
+
+def applyAngularVelocityToQuaternion(q, w, t):
+    norm_w = np.linalg.norm(w)
+    if norm_w <= epsilon:
+        return q
+    a = w / norm_w
+    if q.dtype == AutoDiffXd:
+        delta_q = Quaternion_[AutoDiffXd](np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
+        return Quaternion_[AutoDiffXd](q/np.linalg.norm(q)).multiply(delta_q).wxyz()
+    else:
+        delta_q = Quaternion(np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
+        return Quaternion(q/np.linalg.norm(q)).multiply(delta_q).wxyz()
 
 def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False):
     N = num_knot_points
@@ -261,7 +275,17 @@ def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False
                 plant_float.num_positions() + plant_float.num_positions() + plant_float.num_velocities()])
             plant, context = getPlantAndContext(q, v)
             qd = plant.MapVelocityToQDot(context, v*dt[0])
-            return q - qprev - qd
+            # return q - qprev - qd
+            '''
+            As advised in
+            https://stackoverflow.com/a/63510131/3177701
+            '''
+            ret_quat = q[0:4] - applyAngularVelocityToQuaternion(qprev[0:4], v[0:3], dt[0])
+            ret_linear = (q - qprev - qd)[4:]
+            ret = np.hstack([ret_quat, ret_linear])
+            # print(ret)
+            return ret
+
         # dt[k] must be converted to an array
         (prog.AddConstraint(eq7d, lb=[0.0]*plant_float.num_positions(), ub=[0.0]*plant_float.num_positions(),
                 vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]]))
