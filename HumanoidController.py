@@ -14,7 +14,7 @@ Convert to time-varying y_desired and z_com
 
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
-from load_atlas import g, JOINT_LIMITS, CONTACTS_PER_FRAME, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
+from load_atlas import Atlas
 import numpy as np
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
@@ -60,7 +60,7 @@ class HumanoidController(LeafSystem):
         self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.num_positions() + self.plant.num_velocities())).get_index()
-        self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
+        self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(Atlas.NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
 
         if self.is_wbc:
             com_dim = 3
@@ -109,7 +109,7 @@ class HumanoidController(LeafSystem):
 
             ''' Eq(4) '''
             C_2 = np.hstack([np.identity(2), np.zeros((2,2))]) # C in Eq(2)
-            D = -z_com / g * np.identity(zmp_state_size)
+            D = -z_com / Atlas.g * np.identity(zmp_state_size)
             Q = 1.0 * np.identity(zmp_state_size)
 
             ''' Eq(6) '''
@@ -213,7 +213,7 @@ class HumanoidController(LeafSystem):
         for frame, active_contacts in active_contacts_per_frame.items():
             if active_contacts.size:
                 num_active_contacts = active_contacts.shape[1]
-                J_foot = np.zeros((N_f*num_active_contacts, TOTAL_DOF))
+                J_foot = np.zeros((N_f*num_active_contacts, Atlas.TOTAL_DOF))
                 # TODO: Can this be simplified?
                 for i in range(num_active_contacts):
                     J_foot[N_f*i:N_f*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
@@ -221,7 +221,7 @@ class HumanoidController(LeafSystem):
                         active_contacts[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
                 J_foots.append(J_foot)
         J = np.vstack(J_foots)
-        assert(J.shape == (N_c*N_f, TOTAL_DOF))
+        assert(J.shape == (N_c*N_f, Atlas.TOTAL_DOF))
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
         self.eta = eta
@@ -236,7 +236,7 @@ class HumanoidController(LeafSystem):
         epsilon = 1.0e-8
         K_p = 10.0
         K_d = 2.0
-        frame_weights = np.ones((TOTAL_DOF))
+        frame_weights = np.ones((Atlas.TOTAL_DOF))
 
         q = self.plant.GetPositions(plant_context)
         qd = self.plant.GetVelocities(plant_context)
@@ -247,7 +247,7 @@ class HumanoidController(LeafSystem):
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
         ignored_pose_indices = {} # Ignore x position, y position
-        relevant_pose_indices = list(set(range(TOTAL_DOF)) - set(ignored_pose_indices))
+        relevant_pose_indices = list(set(range(Atlas.TOTAL_DOF)) - set(ignored_pose_indices))
         self.relevant_pose_indices = relevant_pose_indices
         qdd_ref = K_p*q_err + K_d*(v_des - qd) + vd_des # Eq(27) of [1]
         qdd_err = qdd_ref - qdd
@@ -324,7 +324,7 @@ class HumanoidController(LeafSystem):
         prog.AddLinearConstraint(u[1] == com_dd[1])
 
         ''' Respect joint limits '''
-        for name, limit in JOINT_LIMITS.items():
+        for name, limit in Atlas.JOINT_LIMITS.items():
             # Get the corresponding joint value
             joint_pos = self.plant.GetJointByName(name).get_angle(plant_context)
             # Get the corresponding actuator index
@@ -386,10 +386,10 @@ class HumanoidController(LeafSystem):
         # print(f"comdd z: {comdd[2]}")
         # self.plant.EvalBodyPoseInWorld(current_plant_context, self.plant.GetBodyByName("pelvis")).rotation().ToQuaternion().xyz()
         print(f"pelvis angular position = {Quaternion(normalize(q_v[0:4])).xyz()}")
-        print(f"pelvis angular velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3]}")
+        print(f"pelvis angular velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF:Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3]}")
         print(f"pelvis angular acceleration = {qdd_sol[0:3]}")
         print(f"pelvis translational position = {q_v[4:7]}")
-        print(f"pelvis translational velocity = {q_v[FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 3 : FLOATING_BASE_QUAT_DOF + NUM_ACTUATED_DOF + 6]}")
+        print(f"pelvis translational velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3 : Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 6]}")
         print(f"pelvis translational acceleration = {qdd_sol[3:6]}")
         # print(f"beta = {beta_sol}")
         # print(f"lambda z = {lambd_sol[2::3]}")
@@ -432,7 +432,7 @@ def main():
 
     controller_plant = MultibodyPlant(mbp_time_step)
     load_atlas(controller_plant)
-    controller = builder.AddSystem(HumanoidController(controller_plant, CONTACTS_PER_FRAME, is_wbc=False))
+    controller = builder.AddSystem(HumanoidController(controller_plant, Atlas.CONTACTS_PER_FRAME, is_wbc=False))
     controller.set_name("HumanoidController")
 
     builder.Connect(sim_plant.get_state_output_port(), controller.GetInputPort("q_v"))
