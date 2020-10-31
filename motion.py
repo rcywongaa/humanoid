@@ -8,7 +8,7 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
-from load_atlas import JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF, M
+from load_atlas import Atlas
 from pydrake.all import Quaternion
 from pydrake.all import Multiplexer
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource
@@ -25,27 +25,11 @@ import pickle
 mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
-
+mu = 1.0 # Coefficient of friction
 epsilon = 1e-9
 PLAYBACK_ONLY = False
 ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
 MAX_GROUND_PENETRATION = 1e-2
-
-num_contact_points = lfoot_full_contact_points.shape[1]+rfoot_full_contact_points.shape[1]
-mu = 1.0 # Coefficient of friction, same as in load_atlas.py
-n = np.array([
-    [0],
-    [0],
-    [1.0]])
-d = np.array([
-    [1.0, -1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, -1.0],
-    [0.0, 0.0, 0.0, 0.0]])
-# Equivalent to v in HumanoidController.py
-friction_cone_components = np.zeros((N_d, num_contact_points, N_f))
-for i in range(N_d):
-    for j in range(num_contact_points):
-        friction_cone_components[i,j] = (n+mu*d)[:,i]
 
 def create_q_interpolation(plant, context, q_traj, v_traj, dt_traj):
     t_traj = np.cumsum(dt_traj)
@@ -79,9 +63,6 @@ def create_r_interpolation(r_traj, rd_traj, rdd_traj, dt_traj):
     rdd_poly = rd_poly.derivative()
     return r_poly, rd_poly, rdd_poly
 
-def toTauj(tau_k):
-    return np.hstack([np.zeros((num_contact_points, 2)), np.reshape(tau_k, (num_contact_points, 1))])
-
 def applyAngularVelocityToQuaternion(q, w, t):
     norm_w = np.linalg.norm(w)
     if norm_w <= epsilon:
@@ -94,393 +75,434 @@ def applyAngularVelocityToQuaternion(q, w, t):
         delta_q = Quaternion(np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
         return Quaternion(q/np.linalg.norm(q)).multiply(delta_q).wxyz()
 
-def calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=False):
-    N = num_knot_points
-    T = max_time
-    plant_float = MultibodyPlant(mbp_time_step)
-    load_atlas(plant_float)
-    context_float = plant_float.CreateDefaultContext()
-    plant_autodiff = plant_float.ToAutoDiffXd()
-    context_autodiff = plant_autodiff.CreateDefaultContext()
-    upright_context = plant_float.CreateDefaultContext()
-    set_atlas_initial_pose(plant_float, upright_context)
-    q_nom = plant_float.GetPositions(upright_context)
+class HumanoidPlanner:
+    def __init__(self, plant_float, contacts_per_frame, q_nom):
+        self.plant_float = plant_float
+        self.context_float = plant_float.CreateDefaultContext()
+        self.plant_autodiff = self.plant_float.ToAutoDiffXd()
+        self.context_autodiff = self.plant_autodiff.CreateDefaultContext()
+        self.q_nom = q_nom
 
-    def getPlantAndContext(q, v):
+        self.contacts_per_frame = contacts_per_frame
+        self.num_contacts = sum([contact_points.shape[1] for contact_points in contacts_per_frame.values()])
+        self.contact_dim = 3*self.num_contacts
+
+        n = np.array([
+            [0],
+            [0],
+            [1.0]])
+        d = np.array([
+            [1.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, -1.0],
+            [0.0, 0.0, 0.0, 0.0]])
+        # Equivalent to v in HumanoidController.py
+        self.friction_cone_components = np.zeros((N_d, self.num_contacts, N_f))
+        for i in range(N_d):
+            for j in range(self.num_contacts):
+                self.friction_cone_components[i,j] = (n+mu*d)[:,i]
+
+    def getPlantAndContext(self, q, v):
         assert(q.dtype == v.dtype)
         if q.dtype == np.object:
-            plant_autodiff.SetPositions(context_autodiff, q)
-            plant_autodiff.SetVelocities(context_autodiff, v)
-            return plant_autodiff, context_autodiff
+            self.plant_autodiff.SetPositions(self.context_autodiff, q)
+            self.plant_autodiff.SetVelocities(self.context_autodiff, v)
+            return self.plant_autodiff, self.context_autodiff
         else:
-            plant_float.SetPositions(context_float, q)
-            plant_float.SetVelocities(context_float, v)
-            return plant_float, context_float
-
-
-    # Returns contact positions in the shape [3, num_contact_points]
-    def get_contact_positions(q, v):
-        plant, context = getPlantAndContext(q, v)
-        lfoot_full_contact_positions = plant.CalcPointsPositions(
-                context, plant.GetFrameByName("l_foot"),
-                lfoot_full_contact_points, plant.world_frame())
-        rfoot_full_contact_positions = plant.CalcPointsPositions(
-                context, plant.GetFrameByName("r_foot"),
-                rfoot_full_contact_points, plant.world_frame())
-        return np.concatenate([lfoot_full_contact_positions, rfoot_full_contact_positions], axis=1)
-
-    sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(plant_float)])
-    sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(plant_float)])
-    sorted_joint_velocity_limits = np.array([entry[1].velocity for entry in getSortedJointLimits(plant_float)])
-
-    prog = MathematicalProgram()
-    q = prog.NewContinuousVariables(rows=N, cols=plant_float.num_positions(), name="q")
-    v = prog.NewContinuousVariables(rows=N, cols=plant_float.num_velocities(), name="v")
-    dt = prog.NewContinuousVariables(N, name="dt")
-    r = prog.NewContinuousVariables(rows=N, cols=3, name="r")
-    rd = prog.NewContinuousVariables(rows=N, cols=3, name="rd")
-    rdd = prog.NewContinuousVariables(rows=N, cols=3, name="rdd")
-    contact_dim = 3*num_contact_points
-    # The cols are ordered as
-    # [contact1_x, contact1_y, contact1_z, contact2_x, contact2_y, contact2_z, ...]
-    c = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="c")
-    F = prog.NewContinuousVariables(rows=N, cols=contact_dim, name="F")
-    tau = prog.NewContinuousVariables(rows=N, cols=num_contact_points, name="tau") # We assume only z torque exists
-    h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
-    hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
+            self.plant_float.SetPositions(self.context_float, q)
+            self.plant_float.SetVelocities(self.context_float, v)
+            return self.plant_float, self.context_float
 
     '''
-    Slack for the complementary constraints
-    Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
+    Creates an np.array of shape [3, num_contacts] where first 2 rows are zeros
+    since we only care about tau in the z direction
     '''
-    slack = 1e-3
+    def toTauj(self, tau_k):
+        return np.hstack([np.zeros((self.num_contacts, 2)), np.reshape(tau_k, (self.num_contacts, 1))])
 
-    ''' Additional variables not explicitly stated '''
-    # Friction cone scale
-    beta = prog.NewContinuousVariables(rows=N, cols=num_contact_points*N_d, name="beta")
+    '''
+    Returns contact positions in the shape [3, num_contacts]
+    '''
+    def get_contact_positions(self, q, v):
+        plant, context = self.getPlantAndContext(q, v)
+        contact_positions_per_frame = []
+        for frame, contacts in self.contacts_per_frame.items():
+            contact_positions = plant.CalcPointsPositions(
+                context, plant.GetFrameByName(frame),
+                contacts, plant.world_frame())
+            contact_positions_per_frame.append(contact_positions)
+        return np.concatenate(contact_positions_per_frame, axis=1)
 
-    g = np.array([0, 0, -9.81])
-    for k in range(N):
-        ''' Eq(7a) '''
-        Fj = np.reshape(F[k], (num_contact_points, 3))
-        (prog.AddLinearConstraint(eq(M*rdd[k], np.sum(Fj, axis=0) + M*g))
-                .evaluator().set_description(f"Eq(7a)[{k}]"))
-        ''' Eq(7b) '''
-        cj = np.reshape(c[k], (num_contact_points, 3))
-        tauj = toTauj(tau[k])
-        (prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
-                .evaluator().set_description(f"Eq(7b)[{k}]"))
-        ''' Eq(7c) '''
-        # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
-        def calc_h(q, v):
-            plant, context = getPlantAndContext(q, v)
-            return plant.CalcSpatialMomentumInWorldAboutPoint(context, plant.CalcCenterOfMassPosition(context)).rotational()
-        def eq7c(q_v_h):
-            q, v, h = np.split(q_v_h, [
-                plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_velocities()])
-            return calc_h(q, v) - h
-        (prog.AddConstraint(eq7c, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], h[k]]))
-            .evaluator().set_description(f"Eq(7c)[{k}]"))
-        ''' Eq(7h) '''
-        def calc_r(q, v):
-            plant, context = getPlantAndContext(q, v)
-            return plant.CalcCenterOfMassPosition(context)
-        def eq7h(q_v_r):
-            q, v, r = np.split(q_v_r, [
-                plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_velocities()])
-            return  calc_r(q, v) - r
-        # COM position has dimension 3
-        (prog.AddConstraint(eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
-                .evaluator().set_description(f"Eq(7h)[{k}]"))
-        ''' Eq(7i) '''
-        def eq7i(q_v_ck):
-            q, v, ck = np.split(q_v_ck, [
-                plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_velocities()])
-            cj = np.reshape(ck, (num_contact_points, 3))
-            # print(f"q = {q}\nv={v}\nck={ck}")
-            contact_positions = get_contact_positions(q, v).T
-            return (contact_positions - cj).flatten()
-        # np.concatenate cannot work q, cj since they have different dimensions
-        (prog.AddConstraint(eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
-                .evaluator().set_description(f"Eq(7i)[{k}]"))
-        ''' Eq(7j) '''
-        (prog.AddBoundingBoxConstraint([-10, -10, -MAX_GROUND_PENETRATION]*num_contact_points, [10, 10, 10]*num_contact_points, c[k])
-                .evaluator().set_description(f"Eq(7j)[{k}]"))
-        ''' Eq(7k) '''
-        ''' Constrain admissible posture '''
-        (prog.AddBoundingBoxConstraint(sorted_joint_position_lower_limits, sorted_joint_position_upper_limits,
-                q[k, FLOATING_BASE_QUAT_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint position"))
-        ''' Constrain velocities '''
-        (prog.AddBoundingBoxConstraint(-sorted_joint_velocity_limits, sorted_joint_velocity_limits,
-            v[k, FLOATING_BASE_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint velocity"))
-        ''' Constrain forces within friction cone '''
-        beta_k = np.reshape(beta[k], (num_contact_points, N_d))
-        for i in range(num_contact_points):
-            beta_v = beta_k[i].dot(friction_cone_components[:,i,:])
-            (prog.AddLinearConstraint(eq(Fj[i], beta_v))
-                    .evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint[{i}]"))
-        ''' Constrain beta positive '''
-        for b in beta_k.flat:
-            (prog.AddLinearConstraint(b >= 0.0)
-                    .evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint"))
-        ''' Constrain torques - assume torque linear to friction cone'''
-        friction_torque_coefficient = 0.1
-        for i in range(num_contact_points):
-            max_torque = friction_torque_coefficient * np.sum(beta_k[i])
-            (prog.AddLinearConstraint(le(tau[k][i], np.array([max_torque])))
-                    .evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit"))
-            (prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
-                    .evaluator().set_description(f"Eq(7k)[{k}] friction torque lower limit"))
+    ''' Assume flat ground for now... '''
+    def get_contact_positions_z(self, q, v):
+        return self.get_contact_positions(q, v)[2,:]
 
-        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
-            ''' Assume flat ground for now... '''
-            def get_contact_positions_z(q, v):
-                return get_contact_positions(q, v)[2,:]
-            ''' Eq(8a) '''
-            def eq8a_lhs(q_v_F):
-                q, v, F = np.split(q_v_F, [
-                    plant_float.num_positions(),
-                    plant_float.num_positions() + plant_float.num_velocities()])
-                Fj = np.reshape(F, (num_contact_points, 3))
-                return [Fj[:,2].dot(get_contact_positions_z(q, v))] # Constraint functions must output vectors
-            (prog.AddConstraint(eq8a_lhs, lb=[-slack], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
-                    .evaluator().set_description(f"Eq(8a)[{k}]"))
-            ''' Eq(8b) '''
-            def eq8b_lhs(q_v_tau):
-                q, v, tau = np.split(q_v_tau, [
-                    plant_float.num_positions(),
-                    plant_float.num_positions() + plant_float.num_velocities()])
-                tauj = toTauj(tau)
-                return (tauj**2).T.dot(get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
-            (prog.AddConstraint(eq8b_lhs, lb=[-slack]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
-                    .evaluator().set_description(f"Eq(8b)[{k}]"))
-            ''' Eq(8c) '''
-            (prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-                    .evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero"))
-            def eq8c_2(q_v):
-                q, v = np.split(q_v, [plant_float.num_positions()])
-                return get_contact_positions_z(q, v)
-            (prog.AddConstraint(eq8c_2, lb=[-MAX_GROUND_PENETRATION]*num_contact_points, ub=[float('inf')]*num_contact_points, vars=np.concatenate([q[k], v[k]]))
-                    .evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero"))
+    # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
+    def calc_h(self, q, v):
+        plant, context = self.getPlantAndContext(q, v)
+        return plant.CalcSpatialMomentumInWorldAboutPoint(context, plant.CalcCenterOfMassPosition(context)).rotational()
 
-    for k in range(1, N):
-        ''' Eq(7d) '''
-        def eq7d(q_qprev_v_dt):
-            q, qprev, v, dt = np.split(q_qprev_v_dt, [
-                plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_positions(),
-                plant_float.num_positions() + plant_float.num_positions() + plant_float.num_velocities()])
-            plant, context = getPlantAndContext(q, v)
-            qd = plant.MapVelocityToQDot(context, v*dt[0])
-            # return q - qprev - qd
-            '''
-            As advised in
-            https://stackoverflow.com/a/63510131/3177701
-            '''
-            ret_quat = q[0:4] - applyAngularVelocityToQuaternion(qprev[0:4], v[0:3], dt[0])
-            ret_linear = (q - qprev - qd)[4:]
-            ret = np.hstack([ret_quat, ret_linear])
-            # print(ret)
-            return ret
+    def calc_r(self, q, v):
+        plant, context = self.getPlantAndContext(q, v)
+        return plant.CalcCenterOfMassPosition(context)
 
-        # dt[k] must be converted to an array
-        (prog.AddConstraint(eq7d, lb=[0.0]*plant_float.num_positions(), ub=[0.0]*plant_float.num_positions(),
-                vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]]))
-            .evaluator().set_description(f"Eq(7d)[{k}]"))
+    def eq7c(self, q_v_h):
+        q, v, h = np.split(q_v_h, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        return self.calc_h(q, v) - h
 
-        # Deprecated
-        # '''
-        # Constrain rotation
-        # Taken from Practical Methods for Optimal Control and Estimation by ...
-        # Section 6.8 Reorientation of an Asymmetric Rigid Body
-        # '''
-        # q1 = q[k,0]
-        # q2 = q[k,1]
-        # q3 = q[k,2]
-        # q4 = q[k,3]
-        # w1 = v[k,0]*dt[k]
-        # w2 = v[k,1]*dt[k]
-        # w3 = v[k,2]*dt[k]
-        # # Not sure why reshape is necessary
-        # prog.AddConstraint(eq(q[k,0] - q[k-1,0], 0.5*(w1*q4 - w2*q3 + w3*q2)).reshape((1,)))
-        # prog.AddConstraint(eq(q[k,1] - q[k-1,1], 0.5*(w1*q3 + w2*q4 - w3*q1)).reshape((1,)))
-        # prog.AddConstraint(eq(q[k,2] - q[k-1,2], 0.5*(-w1*q2 + w2*q1 + w3*q4)).reshape((1,)))
-        # prog.AddConstraint(eq(q[k,3] - q[k-1,3], 0.5*(-w1*q1 - w2*q2 - w3*q3)).reshape((1,)))
-        # ''' Constrain other positions '''
-        # prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
+    def eq7d(self, q_qprev_v_dt):
+        q, qprev, v, dt = np.split(q_qprev_v_dt, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        plant, context = self.getPlantAndContext(q, v)
+        qd = plant.MapVelocityToQDot(context, v*dt[0])
+        # return q - qprev - qd
+        '''
+        As advised in
+        https://stackoverflow.com/a/63510131/3177701
+        '''
+        ret_quat = q[0:4] - applyAngularVelocityToQuaternion(qprev[0:4], v[0:3], dt[0])
+        ret_linear = (q - qprev - qd)[4:]
+        ret = np.hstack([ret_quat, ret_linear])
+        # print(ret)
+        return ret
 
-        ''' Eq(7e) '''
-        (prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
-            .evaluator().set_description(f"Eq(7e)[{k}]"))
-        ''' Eq(7f) '''
-        (prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
-            .evaluator().set_description(f"Eq(7f)[{k}]"))
-        ''' Eq(7g) '''
-        (prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
-            .evaluator().set_description(f"Eq(7g)[{k}]"))
+    def eq7h(self, q_v_r):
+        q, v, r = np.split(q_v_r, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        return  self.calc_r(q, v) - r
 
-        Fj = np.reshape(F[k], (num_contact_points, 3))
-        cj = np.reshape(c[k], (num_contact_points, 3))
-        cj_prev = np.reshape(c[k-1], (num_contact_points, 3))
+    def eq7i(self, q_v_ck):
+        q, v, ck = np.split(q_v_ck, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        cj = np.reshape(ck, (self.num_contacts, 3))
+        # print(f"q = {q}\nv={v}\nck={ck}")
+        contact_positions = self.get_contact_positions(q, v).T
+        return (contact_positions - cj).flatten()
 
-        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
-            for i in range(num_contact_points):
-                ''' Assume flat ground for now... '''
-                ''' Eq(9a) '''
-                def eq9a_lhs(F_c_cprev, i=i):
+    def eq8a_lhs(self, q_v_F):
+        q, v, F = np.split(q_v_F, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        Fj = np.reshape(F, (self.num_contacts, 3))
+        return [Fj[:,2].dot(self.get_contact_positions_z(q, v))] # Constraint functions must output vectors
+
+    def eq8b_lhs(self, q_v_tau):
+        q, v, tau = np.split(q_v_tau, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        tauj = self.toTauj(tau)
+        return (tauj**2).T.dot(self.get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
+
+    def eq8c_2(self, q_v):
+        q, v = np.split(q_v, [self.plant_float.num_positions()])
+        return self.get_contact_positions_z(q, v)
+
+    ''' Assume flat ground for now... '''
+    def eq9a_lhs(self, F_c_cprev, i):
+        F, c, c_prev = np.split(F_c_cprev, [
+            self.contact_dim,
+            self.contact_dim + self.contact_dim])
+        Fj = np.reshape(F, (self.num_contacts, 3))
+        cj = np.reshape(c, (self.num_contacts, 3))
+        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
+
+    def eq9b_lhs(self, F_c_cprev, i):
+        F, c, c_prev = np.split(F_c_cprev, [
+            self.contact_dim,
+            self.contact_dim + self.contact_dim])
+        Fj = np.reshape(F, (self.num_contacts, 3))
+        cj = np.reshape(c, (self.num_contacts, 3))
+        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
+
+    def calcTrajectory(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
+        N = num_knot_points
+        T = max_time
+
+        sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(self.plant_float)])
+        sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(self.plant_float)])
+        sorted_joint_velocity_limits = np.array([entry[1].velocity for entry in getSortedJointLimits(self.plant_float)])
+
+        prog = MathematicalProgram()
+        q = prog.NewContinuousVariables(rows=N, cols=self.plant_float.num_positions(), name="q")
+        v = prog.NewContinuousVariables(rows=N, cols=self.plant_float.num_velocities(), name="v")
+        dt = prog.NewContinuousVariables(N, name="dt")
+        r = prog.NewContinuousVariables(rows=N, cols=3, name="r")
+        rd = prog.NewContinuousVariables(rows=N, cols=3, name="rd")
+        rdd = prog.NewContinuousVariables(rows=N, cols=3, name="rdd")
+        # The cols are ordered as
+        # [contact1_x, contact1_y, contact1_z, contact2_x, contact2_y, contact2_z, ...]
+        c = prog.NewContinuousVariables(rows=N, cols=self.contact_dim, name="c")
+        F = prog.NewContinuousVariables(rows=N, cols=self.contact_dim, name="F")
+        tau = prog.NewContinuousVariables(rows=N, cols=self.num_contacts, name="tau") # We assume only z torque exists
+        h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
+        hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
+
+        '''
+        Slack for the complementary constraints
+        Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
+        '''
+        slack = 1e-3
+
+        ''' Additional variables not explicitly stated '''
+        # Friction cone scale
+        beta = prog.NewContinuousVariables(rows=N, cols=self.num_contacts*N_d, name="beta")
+
+        g = np.array([0, 0, -Atlas.g])
+        for k in range(N):
+            ''' Eq(7a) '''
+            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            (prog.AddLinearConstraint(eq(Atlas.M*rdd[k], np.sum(Fj, axis=0) + Atlas.M*g))
+                    .evaluator().set_description(f"Eq(7a)[{k}]"))
+            ''' Eq(7b) '''
+            cj = np.reshape(c[k], (self.num_contacts, 3))
+            tauj = self.toTauj(tau[k])
+            (prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
+                    .evaluator().set_description(f"Eq(7b)[{k}]"))
+            ''' Eq(7c) '''
+            (prog.AddConstraint(self.eq7c, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], h[k]]))
+                .evaluator().set_description(f"Eq(7c)[{k}]"))
+            ''' Eq(7h) '''
+            # COM position has dimension 3
+            (prog.AddConstraint(self.eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
+                    .evaluator().set_description(f"Eq(7h)[{k}]"))
+            ''' Eq(7i) '''
+            # np.concatenate cannot work q, cj since they have different dimensions
+            (prog.AddConstraint(self.eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
+                    .evaluator().set_description(f"Eq(7i)[{k}]"))
+            ''' Eq(7j) '''
+            (prog.AddBoundingBoxConstraint([-10, -10, -MAX_GROUND_PENETRATION]*self.num_contacts, [10, 10, 10]*self.num_contacts, c[k])
+                    .evaluator().set_description(f"Eq(7j)[{k}]"))
+            ''' Eq(7k) '''
+            ''' Constrain admissible posture '''
+            (prog.AddBoundingBoxConstraint(sorted_joint_position_lower_limits, sorted_joint_position_upper_limits,
+                    q[k, Atlas.FLOATING_BASE_QUAT_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint position"))
+            ''' Constrain velocities '''
+            (prog.AddBoundingBoxConstraint(-sorted_joint_velocity_limits, sorted_joint_velocity_limits,
+                v[k, Atlas.FLOATING_BASE_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint velocity"))
+            ''' Constrain forces within friction cone '''
+            beta_k = np.reshape(beta[k], (self.num_contacts, N_d))
+            for i in range(self.num_contacts):
+                beta_v = beta_k[i].dot(self.friction_cone_components[:,i,:])
+                (prog.AddLinearConstraint(eq(Fj[i], beta_v))
+                        .evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint[{i}]"))
+            ''' Constrain beta positive '''
+            for b in beta_k.flat:
+                (prog.AddLinearConstraint(b >= 0.0)
+                        .evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint"))
+            ''' Constrain torques - assume torque linear to friction cone'''
+            friction_torque_coefficient = 0.1
+            for i in range(self.num_contacts):
+                max_torque = friction_torque_coefficient * np.sum(beta_k[i])
+                (prog.AddLinearConstraint(le(tau[k][i], np.array([max_torque])))
+                        .evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit"))
+                (prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
+                        .evaluator().set_description(f"Eq(7k)[{k}] friction torque lower limit"))
+
+            if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+                ''' Eq(8a) '''
+                (prog.AddConstraint(self.eq8a_lhs, lb=[-slack], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
+                        .evaluator().set_description(f"Eq(8a)[{k}]"))
+                ''' Eq(8b) '''
+                (prog.AddConstraint(self.eq8b_lhs, lb=[-slack]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
+                        .evaluator().set_description(f"Eq(8b)[{k}]"))
+                ''' Eq(8c) '''
+                (prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
+                        .evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero"))
+                # TODO: Why can't this be converted to a linear constraint?
+                (prog.AddConstraint(self.eq8c_2, lb=[-MAX_GROUND_PENETRATION]*self.num_contacts, ub=[float('inf')]*self.num_contacts, vars=np.concatenate([q[k], v[k]]))
+                        .evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero"))
+
+        for k in range(1, N):
+            ''' Eq(7d) '''
+            # dt[k] must be converted to an array
+            (prog.AddConstraint(self.eq7d, lb=[0.0]*self.plant_float.num_positions(), ub=[0.0]*self.plant_float.num_positions(),
+                    vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]]))
+                .evaluator().set_description(f"Eq(7d)[{k}]"))
+
+            # Deprecated
+            # '''
+            # Constrain rotation
+            # Taken from Practical Methods for Optimal Control and Estimation by ...
+            # Section 6.8 Reorientation of an Asymmetric Rigid Body
+            # '''
+            # q1 = q[k,0]
+            # q2 = q[k,1]
+            # q3 = q[k,2]
+            # q4 = q[k,3]
+            # w1 = v[k,0]*dt[k]
+            # w2 = v[k,1]*dt[k]
+            # w3 = v[k,2]*dt[k]
+            # # Not sure why reshape is necessary
+            # prog.AddConstraint(eq(q[k,0] - q[k-1,0], 0.5*(w1*q4 - w2*q3 + w3*q2)).reshape((1,)))
+            # prog.AddConstraint(eq(q[k,1] - q[k-1,1], 0.5*(w1*q3 + w2*q4 - w3*q1)).reshape((1,)))
+            # prog.AddConstraint(eq(q[k,2] - q[k-1,2], 0.5*(-w1*q2 + w2*q1 + w3*q4)).reshape((1,)))
+            # prog.AddConstraint(eq(q[k,3] - q[k-1,3], 0.5*(-w1*q1 - w2*q2 - w3*q3)).reshape((1,)))
+            # ''' Constrain other positions '''
+            # prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
+
+            ''' Eq(7e) '''
+            (prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
+                .evaluator().set_description(f"Eq(7e)[{k}]"))
+            ''' Eq(7f) '''
+            (prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
+                .evaluator().set_description(f"Eq(7f)[{k}]"))
+            ''' Eq(7g) '''
+            (prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
+                .evaluator().set_description(f"Eq(7g)[{k}]"))
+
+            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            cj = np.reshape(c[k], (self.num_contacts, 3))
+            cj_prev = np.reshape(c[k-1], (self.num_contacts, 3))
+
+            if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+                for i in range(self.num_contacts):
+                    ''' Eq(9a) '''
                     '''
                     i=i is used to capture the outer scope i variable
                     https://stackoverflow.com/a/2295372/3177701
                     '''
-                    F, c, c_prev = np.split(F_c_cprev, [
-                        contact_dim,
-                        contact_dim + contact_dim])
-                    Fj = np.reshape(F, (num_contact_points, 3))
-                    cj = np.reshape(c, (num_contact_points, 3))
-                    cj_prev = np.reshape(c_prev, (num_contact_points, 3))
-                    return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
-                (prog.AddConstraint(eq9a_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
-                        .evaluator().set_description("Eq(9a)[{k}][{i}]"))
-                ''' Eq(9b) '''
-                def eq9b_lhs(F_c_cprev, i=i):
-                    F, c, c_prev = np.split(F_c_cprev, [
-                        contact_dim,
-                        contact_dim + contact_dim])
-                    Fj = np.reshape(F, (num_contact_points, 3))
-                    cj = np.reshape(c, (num_contact_points, 3))
-                    cj_prev = np.reshape(c_prev, (num_contact_points, 3))
-                    return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
-                (prog.AddConstraint(eq9b_lhs, ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
-                        .evaluator().set_description("Eq(9b)[{k}][{i}]"))
-    # ''' Eq(10) '''
-    # Q_q = 0.1 * np.identity(plant_float.num_velocities())
-    # Q_v = 1.0 * np.identity(plant_float.num_velocities())
-    # for k in range(N):
-        # def pose_error_cost(q_v_dt):
-            # q, v, dt = np.split(q_v_dt, [
-                # plant_float.num_positions(),
-                # plant_float.num_positions() + plant_float.num_velocities()])
-            # plant, context = getPlantAndContext(q, v)
-            # q_err = plant.MapQDotToVelocity(context, q-q_nom)
-            # return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
-        # prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
-        # prog.AddCost(dt[k]*(
-                # + v[k].dot(Q_v).dot(v[k])
-                # + rdd[k].dot(rdd[k])))
+                    (prog.AddConstraint(lambda F_c_cprev, i=i : self.eq9a_lhs(F_c_cprev, i), ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
+                            .evaluator().set_description("Eq(9a)[{k}][{i}]"))
+                    ''' Eq(9b) '''
+                    '''
+                    i=i is used to capture the outer scope i variable
+                    https://stackoverflow.com/a/2295372/3177701
+                    '''
+                    (prog.AddConstraint(lambda F_c_cprev, i=i : self.eq9b_lhs(F_c_cprev, i), ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
+                            .evaluator().set_description("Eq(9b)[{k}][{i}]"))
+        # ''' Eq(10) '''
+        # Q_q = 0.1 * np.identity(self.plant_float.num_velocities())
+        # Q_v = 1.0 * np.identity(self.plant_float.num_velocities())
+        # for k in range(N):
+            # def pose_error_cost(q_v_dt):
+                # q, v, dt = np.split(q_v_dt, [
+                    # self.plant_float.num_positions(),
+                    # self.plant_float.num_positions() + self.plant_float.num_velocities()])
+                # plant, context = getPlantAndContext(q, v)
+                # q_err = plant.MapQDotToVelocity(context, q-self.q_nom)
+                # return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
+            # prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
+            # prog.AddCost(dt[k]*(
+                    # + v[k].dot(Q_v).dot(v[k])
+                    # + rdd[k].dot(rdd[k])))
 
-    ''' Additional constraints not explicitly stated '''
-    ''' Constrain initial pose '''
-    (prog.AddLinearConstraint(eq(q[0], q_init))
-            .evaluator().set_description("initial pose"))
-    ''' Constrain initial velocity '''
-    (prog.AddLinearConstraint(eq(v[0], 0.0))
-            .evaluator().set_description("initial velocity"))
-    ''' Constrain final pose '''
-    if pelvis_only:
-        (prog.AddLinearConstraint(eq(q[-1, 0:7], q_final[0:7]))
-                .evaluator().set_description("final pose"))
-    else:
-        (prog.AddLinearConstraint(eq(q[-1], q_final))
-                .evaluator().set_description("final pose"))
-    ''' Constrain final velocity '''
-    (prog.AddLinearConstraint(eq(v[-1], 0.0))
-            .evaluator().set_description("final velocity"))
-    ''' Constrain time taken '''
-    (prog.AddLinearConstraint(np.sum(dt) <= T)
-            .evaluator().set_description("max time"))
-    ''' Constrain first time step '''
-    # Note that the first time step is only used in the initial cost calculation
-    # and not in the backwards Euler
-    (prog.AddLinearConstraint(dt[0] == 0)
-            .evaluator().set_description("first timestep"))
-    ''' Constrain remaining time step '''
-    # Values taken from
-    # https://colab.research.google.com/github/RussTedrake/underactuated/blob/master/exercises/simple_legs/compass_gait_limit_cycle/compass_gait_limit_cycle.ipynb
-    (prog.AddLinearConstraint(ge(dt[1:], [0.005]*(N-1)))
-            .evaluator().set_description("min timestep"))
-    (prog.AddLinearConstraint(le(dt, [0.05]*N))
-            .evaluator().set_description("max timestep"))
-    '''
-    Constrain unbounded variables to improve IPOPT performance
-    because IPOPT is an interior point method which works poorly for unbounded variables
-    '''
-    (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
-            .evaluator().set_description("max F"))
-    (prog.AddBoundingBoxConstraint(-1e3, 1e3, tau)
-            .evaluator().set_description("bound tau"))
-    (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
-            .evaluator().set_description("max beta"))
+        ''' Additional constraints not explicitly stated '''
+        ''' Constrain initial pose '''
+        (prog.AddLinearConstraint(eq(q[0], q_init))
+                .evaluator().set_description("initial pose"))
+        ''' Constrain initial velocity '''
+        (prog.AddLinearConstraint(eq(v[0], 0.0))
+                .evaluator().set_description("initial velocity"))
+        ''' Constrain final pose '''
+        if pelvis_only:
+            (prog.AddLinearConstraint(eq(q[-1, 0:7], q_final[0:7]))
+                    .evaluator().set_description("final pose"))
+        else:
+            (prog.AddLinearConstraint(eq(q[-1], q_final))
+                    .evaluator().set_description("final pose"))
+        ''' Constrain final velocity '''
+        (prog.AddLinearConstraint(eq(v[-1], 0.0))
+                .evaluator().set_description("final velocity"))
+        ''' Constrain time taken '''
+        (prog.AddLinearConstraint(np.sum(dt) <= T)
+                .evaluator().set_description("max time"))
+        ''' Constrain first time step '''
+        # Note that the first time step is only used in the initial cost calculation
+        # and not in the backwards Euler
+        (prog.AddLinearConstraint(dt[0] == 0)
+                .evaluator().set_description("first timestep"))
+        ''' Constrain remaining time step '''
+        # Values taken from
+        # https://colab.research.google.com/github/RussTedrake/underactuated/blob/master/exercises/simple_legs/compass_gait_limit_cycle/compass_gait_limit_cycle.ipynb
+        (prog.AddLinearConstraint(ge(dt[1:], [0.005]*(N-1)))
+                .evaluator().set_description("min timestep"))
+        (prog.AddLinearConstraint(le(dt, [0.05]*N))
+                .evaluator().set_description("max timestep"))
+        '''
+        Constrain unbounded variables to improve IPOPT performance
+        because IPOPT is an interior point method which works poorly for unbounded variables
+        '''
+        (prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
+                .evaluator().set_description("max F"))
+        (prog.AddBoundingBoxConstraint(-1e3, 1e3, tau)
+                .evaluator().set_description("bound tau"))
+        (prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
+                .evaluator().set_description("max beta"))
 
-    ''' Solve '''
-    initial_guess = np.empty(prog.num_vars())
-    dt_guess = [0.0] + [T/(N-1)] * (N-1)
-    prog.SetDecisionVariableValueInVector(dt, dt_guess, initial_guess)
-    # Guess q to avoid initializing with invalid quaternion
-    quat_traj_guess = PiecewiseQuaternionSlerp()
-    quat_traj_guess.Append(0, Quaternion(q_init[0:4]))
-    quat_traj_guess.Append(T, Quaternion(q_final[0:4]))
-    position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, T], np.vstack([q_init[4:], q_final[4:]]).T)
-    q_guess = np.array([np.hstack([
-        Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
-        for t in np.linspace(0, T, N)])
-    prog.SetDecisionVariableValueInVector(q, q_guess, initial_guess)
+        ''' Solve '''
+        initial_guess = np.empty(prog.num_vars())
+        dt_guess = [0.0] + [T/(N-1)] * (N-1)
+        prog.SetDecisionVariableValueInVector(dt, dt_guess, initial_guess)
+        # Guess q to avoid initializing with invalid quaternion
+        quat_traj_guess = PiecewiseQuaternionSlerp()
+        quat_traj_guess.Append(0, Quaternion(q_init[0:4]))
+        quat_traj_guess.Append(T, Quaternion(q_final[0:4]))
+        position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, T], np.vstack([q_init[4:], q_final[4:]]).T)
+        q_guess = np.array([np.hstack([
+            Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
+            for t in np.linspace(0, T, N)])
+        prog.SetDecisionVariableValueInVector(q, q_guess, initial_guess)
 
-    v_traj_guess = position_traj_guess.MakeDerivative()
-    w_traj_guess = quat_traj_guess.MakeDerivative()
-    v_guess = np.array([
-        np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
-        for t in np.linspace(0, T, N)])
-    prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
+        v_traj_guess = position_traj_guess.MakeDerivative()
+        w_traj_guess = quat_traj_guess.MakeDerivative()
+        v_guess = np.array([
+            np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
+            for t in np.linspace(0, T, N)])
+        prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
 
-    c_guess = np.array([
-        get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(N)])
-    for i in range(N):
-        assert((eq7i(np.concatenate([q_guess[i], v_guess[i], c_guess[i]])) == 0.0).all())
-    prog.SetDecisionVariableValueInVector(c, c_guess, initial_guess)
+        c_guess = np.array([
+            self.get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(N)])
+        for i in range(N):
+            assert((self.eq7i(np.concatenate([q_guess[i], v_guess[i], c_guess[i]])) == 0.0).all())
+        prog.SetDecisionVariableValueInVector(c, c_guess, initial_guess)
 
-    r_guess = np.array([
-        calc_r(q_guess[i], v_guess[i]) for i in range(N)])
-    prog.SetDecisionVariableValueInVector(r, r_guess, initial_guess)
+        r_guess = np.array([
+            self.calc_r(q_guess[i], v_guess[i]) for i in range(N)])
+        prog.SetDecisionVariableValueInVector(r, r_guess, initial_guess)
 
-    h_guess = np.array([
-        calc_h(q_guess[i], v_guess[i]) for i in range(N)])
-    prog.SetDecisionVariableValueInVector(h, h_guess, initial_guess)
+        h_guess = np.array([
+            self.calc_h(q_guess[i], v_guess[i]) for i in range(N)])
+        prog.SetDecisionVariableValueInVector(h, h_guess, initial_guess)
 
-    solver = IpoptSolver()
-    options = SolverOptions()
-    # options.SetOption(solver.solver_id(), "max_iter", 50000)
-    # This doesn't seem to do anything...
-    # options.SetOption(CommonSolverOption.kPrintToConsole, True)
-    start_solve_time = time.time()
-    print(f"Start solving...")
-    result = solver.Solve(prog, initial_guess, options) # Currently takes around 30 mins
-    print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()} Success: {result.is_success()}")
-    if not result.is_success():
-        print(result.GetInfeasibleConstraintNames(prog))
-        q_sol = result.GetSolution(q)
-        v_sol = result.GetSolution(v)
-        dt_sol = result.GetSolution(dt)
+        solver = IpoptSolver()
+        options = SolverOptions()
+        # options.SetOption(solver.solver_id(), "max_iter", 50000)
+        # This doesn't seem to do anything...
+        # options.SetOption(CommonSolverOption.kPrintToConsole, True)
+        start_solve_time = time.time()
+        print(f"Start solving...")
+        result = solver.Solve(prog, initial_guess, options) # Currently takes around 30 mins
+        print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()} Success: {result.is_success()}")
+        if not result.is_success():
+            print(result.GetInfeasibleConstraintNames(prog))
+            q_sol = result.GetSolution(q)
+            v_sol = result.GetSolution(v)
+            dt_sol = result.GetSolution(dt)
+            r_sol = result.GetSolution(r)
+            rd_sol = result.GetSolution(rd)
+            rdd_sol = result.GetSolution(rdd)
+            c_sol = result.GetSolution(c)
+            F_sol = result.GetSolution(F)
+            tau_sol = result.GetSolution(tau)
+            h_sol = result.GetSolution(h)
+            hd_sol = result.GetSolution(hd)
+            beta_sol = result.GetSolution(beta)
+            pdb.set_trace()
         r_sol = result.GetSolution(r)
         rd_sol = result.GetSolution(rd)
         rdd_sol = result.GetSolution(rdd)
-        c_sol = result.GetSolution(c)
-        F_sol = result.GetSolution(F)
-        tau_sol = result.GetSolution(tau)
-        h_sol = result.GetSolution(h)
-        hd_sol = result.GetSolution(hd)
-        beta_sol = result.GetSolution(beta)
-        pdb.set_trace()
-    r_sol = result.GetSolution(r)
-    rd_sol = result.GetSolution(rd)
-    rdd_sol = result.GetSolution(rdd)
-    q_sol = result.GetSolution(q)
-    v_sol = result.GetSolution(v)
-    dt_sol = result.GetSolution(dt)
+        q_sol = result.GetSolution(q)
+        v_sol = result.GetSolution(v)
+        dt_sol = result.GetSolution(dt)
 
-    return r_sol, rd_sol, rdd_sol, q_sol, v_sol, dt_sol
+        return r_sol, rd_sol, rdd_sol, q_sol, v_sol, dt_sol
 
 def main():
     builder = DiagramBuilder()
@@ -493,6 +515,9 @@ def main():
     q_final = q_init.copy()
     q_final[4] = 0.5 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
+    upright_context = plant.CreateDefaultContext()
+    set_atlas_initial_pose(plant, upright_context)
+    q_nom = plant.GetPositions(upright_context)
 
     num_knot_points = 30
     max_time = 1.0
@@ -501,8 +526,9 @@ def main():
 
     if not PLAYBACK_ONLY:
         print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
+        planner = HumanoidPlanner(plant, Atlas.CONTACTS_PER_FRAME, q_nom)
         r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = (
-                calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
+                planner.calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
 
         with open(export_filename, 'wb') as f:
             pickle.dump([r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj], f)
