@@ -16,7 +16,7 @@ from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisu
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
 from pydrake.all import Quaternion_, AutoDiffXd
-from balance import HumanoidController
+from HumanoidController import HumanoidController
 import numpy as np
 import time
 import pdb
@@ -41,7 +41,7 @@ d = np.array([
     [1.0, -1.0, 0.0, 0.0],
     [0.0, 0.0, 1.0, -1.0],
     [0.0, 0.0, 0.0, 0.0]])
-# Equivalent to v in balance.py
+# Equivalent to v in HumanoidController.py
 friction_cone_components = np.zeros((N_d, num_contact_points, N_f))
 for i in range(N_d):
     for j in range(num_contact_points):
