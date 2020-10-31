@@ -82,27 +82,28 @@ def getActuatorIndices(plant, joint_names):
     return ret
 
 # Taken from drake/drake-build/install/share/drake/examples/atlas/urdf/atlas_minimal_contact.urdf
-lfoot_full_contact_points = np.array([
-    [-0.0876,0.066,-0.07645], # left heel
-    [-0.0876,-0.0626,-0.07645], # right heel
-    [0.1728,0.066,-0.07645], # left toe
-    [0.1728,-0.0626,-0.07645], # right toe
-    [0.086,0.066,-0.07645], # left midfoot_front
-    [0.086,-0.0626,-0.07645], # right midfoot_front
-    [-0.0008,0.066,-0.07645], # left midfoot_rear
-    [-0.0008,-0.0626,-0.07645] # right midfoot_rear
-]).T
-
-rfoot_full_contact_points = np.array([
-    [-0.0876,0.0626,-0.07645], # left heel
-    [-0.0876,-0.066,-0.07645], # right heel
-    [0.1728,0.0626,-0.07645], # left toe
-    [0.1728,-0.066,-0.07645], # right toe
-    [0.086,0.0626,-0.07645], # left midfoot_front
-    [0.086,-0.066,-0.07645], # right midfoot_front
-    [-0.0008,0.0626,-0.07645], # left midfoot_rear
-    [-0.0008,-0.066,-0.07645] # right midfoot_rear
-]).T
+CONTACTS_PER_FRAME = {
+        "l_foot": np.array([
+            [-0.0876,0.066,-0.07645], # left heel
+            [-0.0876,-0.0626,-0.07645], # right heel
+            [0.1728,0.066,-0.07645], # left toe
+            [0.1728,-0.0626,-0.07645], # right toe
+            [0.086,0.066,-0.07645], # left midfoot_front
+            [0.086,-0.0626,-0.07645], # right midfoot_front
+            [-0.0008,0.066,-0.07645], # left midfoot_rear
+            [-0.0008,-0.0626,-0.07645] # right midfoot_rear
+        ]).T,
+        "r_foot": np.array([
+            [-0.0876,0.0626,-0.07645], # left heel
+            [-0.0876,-0.066,-0.07645], # right heel
+            [0.1728,0.0626,-0.07645], # left toe
+            [0.1728,-0.066,-0.07645], # right toe
+            [0.086,0.0626,-0.07645], # left midfoot_front
+            [0.086,-0.066,-0.07645], # right midfoot_front
+            [-0.0008,0.0626,-0.07645], # left midfoot_rear
+            [-0.0008,-0.066,-0.07645] # right midfoot_rear
+        ]).T
+}
 
 FLOATING_BASE_DOF = 6
 FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions

@@ -14,7 +14,7 @@ Convert to time-varying y_desired and z_com
 
 from load_atlas import load_atlas, set_atlas_initial_pose
 from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
-from load_atlas import g, JOINT_LIMITS, lfoot_full_contact_points, rfoot_full_contact_points, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
+from load_atlas import g, JOINT_LIMITS, CONTACTS_PER_FRAME, FLOATING_BASE_DOF, FLOATING_BASE_QUAT_DOF, NUM_ACTUATED_DOF, TOTAL_DOF
 import numpy as np
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
@@ -51,18 +51,18 @@ class HumanoidController(LeafSystem):
         toggles between COM/COP stabilization and whole body stabilization
         by changing the formulation of V
     '''
-    def __init__(self, is_wbc=False):
-        self.is_wbc = is_wbc
+    def __init__(self, plant, contacts_per_frame, is_wbc=False):
         LeafSystem.__init__(self)
-        self.plant = MultibodyPlant(mbp_time_step)
-        load_atlas(self.plant)
+        self.plant = plant
+        self.contacts_per_frame = contacts_per_frame
+        self.is_wbc = is_wbc
         self.upright_context = self.plant.CreateDefaultContext()
         self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.num_positions() + self.plant.num_velocities())).get_index()
         self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
 
-        if is_wbc:
+        if self.is_wbc:
             com_dim = 3
             self.x_size = 2*com_dim
             self.u_size = com_dim
@@ -144,19 +144,15 @@ class HumanoidController(LeafSystem):
 
     def create_qp1(self, plant_context, V, q_des, v_des, vd_des):
         # Determine contact points
-        lfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("l_foot"),
-                lfoot_full_contact_points, self.plant.world_frame())
-        lfoot_contact_points = lfoot_full_contact_points[:, np.where(lfoot_full_contact_pos[2,:] <= 0.0)[0]]
-        rfoot_full_contact_pos = self.plant.CalcPointsPositions(plant_context, self.plant.GetFrameByName("r_foot"),
-                rfoot_full_contact_points, self.plant.world_frame())
-        rfoot_contact_points = rfoot_full_contact_points[:, np.where(rfoot_full_contact_pos[2,:] <= 0.0)[0]]
-        # print("lfoot contact z pos: " + str(lfoot_full_contact_pos[2]))
-        # print("lfoot # contacts: " + str(lfoot_contact_points.shape[1]))
-        # print("rfoot contact z pos: " + str(rfoot_full_contact_pos[2]))
-        # print("rfoot # contacts: " + str(rfoot_contact_points.shape[1]))
-        N_c_lfoot = lfoot_contact_points.shape[1] # Num contacts per foot
-        N_c_rfoot = rfoot_contact_points.shape[1] # Num contacts per foot
-        N_c = N_c_lfoot + N_c_rfoot # num contact points
+        contact_positions_per_frame = {}
+        active_contacts_per_frame = {} # Note this should be in frame space
+        for frame, contacts in self.contacts_per_frame.items():
+            contact_positions = self.plant.CalcPointsPositions(
+                    plant_context, self.plant.GetFrameByName(frame),
+                    contacts, self.plant.world_frame())
+            active_contacts_per_frame[frame] = contacts[:, np.where(contact_positions[2,:] <= 0.0)[0]]
+
+        N_c = sum([active_contacts.shape[1] for active_contacts in active_contacts_per_frame.values()]) # num contact points
         if N_c == 0:
             print("Not in contact!")
             return None
@@ -170,17 +166,12 @@ class HumanoidController(LeafSystem):
 
         # TODO: Double check
         Phi_foots = []
-        if N_c_lfoot:
-            Phi_lfoot = self.plant.CalcJacobianTranslationalVelocity(
-                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                    lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-            Phi_foots.append(Phi_lfoot)
-
-        if N_c_rfoot:
-            Phi_rfoot = self.plant.CalcJacobianTranslationalVelocity(
-                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                    rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-            Phi_foots.append(Phi_rfoot)
+        for frame, active_contacts in active_contacts_per_frame.items():
+            if active_contacts.size:
+                Phi_foots.append(
+                    self.plant.CalcJacobianTranslationalVelocity(
+                        plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName(frame),
+                        active_contacts, self.plant.world_frame(), self.plant.world_frame()))
         Phi = np.vstack(Phi_foots)
 
         ''' Eq(8) '''
@@ -218,18 +209,18 @@ class HumanoidController(LeafSystem):
         self.lambd = lambd
 
         # Jacobians ignoring the 6DOF floating base
-        J_lfoot = np.zeros((N_f*N_c_lfoot, TOTAL_DOF))
-        for i in range(N_c_lfoot):
-            J_lfoot[N_f*i:N_f*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
-                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                lfoot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
-        J_rfoot = np.zeros((N_f*N_c_rfoot, TOTAL_DOF))
-        for i in range(N_c_rfoot):
-            J_rfoot[N_f*i:N_f*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
-                plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                rfoot_contact_points[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
-
-        J = np.vstack([J_lfoot, J_rfoot])
+        J_foots = []
+        for frame, active_contacts in active_contacts_per_frame.items():
+            if active_contacts.size:
+                num_active_contacts = active_contacts.shape[1]
+                J_foot = np.zeros((N_f*num_active_contacts, TOTAL_DOF))
+                # TODO: Can this be simplified?
+                for i in range(num_active_contacts):
+                    J_foot[N_f*i:N_f*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
+                        plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName(frame),
+                        active_contacts[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
+                J_foots.append(J_foot)
+        J = np.vstack(J_foots)
         assert(J.shape == (N_c*N_f, TOTAL_DOF))
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
@@ -277,16 +268,12 @@ class HumanoidController(LeafSystem):
         alpha = 0.1
         # TODO: Double check
         Jd_qd_foots = []
-        if N_c_lfoot:
-            Jd_qd_lfoot = self.plant.CalcBiasTranslationalAcceleration(
-                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("l_foot"),
-                    lfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-            Jd_qd_foots.append(Jd_qd_lfoot.flatten())
-        if N_c_rfoot:
-            Jd_qd_rfoot = self.plant.CalcBiasTranslationalAcceleration(
-                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName("r_foot"),
-                    rfoot_contact_points, self.plant.world_frame(), self.plant.world_frame())
-            Jd_qd_foots.append(Jd_qd_rfoot.flatten())
+        for frame, active_contacts in active_contacts_per_frame.items():
+            if active_contacts.size:
+                Jd_qd_foot = self.plant.CalcBiasTranslationalAcceleration(
+                    plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName(frame),
+                    active_contacts, self.plant.world_frame(), self.plant.world_frame())
+            Jd_qd_foots.append(Jd_qd_foot.flatten())
         Jd_qd = np.concatenate(Jd_qd_foots)
         assert(Jd_qd.shape == (N_c*3,))
         eq12_lhs = J.dot(qdd) + Jd_qd
@@ -439,22 +426,24 @@ class HumanoidController(LeafSystem):
 
 def main():
     builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
-    load_atlas(plant, add_ground=True)
-    plant_context = plant.CreateDefaultContext()
+    sim_plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
+    load_atlas(sim_plant, add_ground=True)
+    sim_plant_context = sim_plant.CreateDefaultContext()
 
-    controller = builder.AddSystem(HumanoidController())
+    controller_plant = MultibodyPlant(mbp_time_step)
+    load_atlas(controller_plant)
+    controller = builder.AddSystem(HumanoidController(controller_plant, CONTACTS_PER_FRAME, is_wbc=False))
     controller.set_name("HumanoidController")
 
-    builder.Connect(plant.get_state_output_port(), controller.GetInputPort("q_v"))
-    builder.Connect(controller.GetOutputPort("tau"), plant.get_actuation_input_port())
+    builder.Connect(sim_plant.get_state_output_port(), controller.GetInputPort("q_v"))
+    builder.Connect(controller.GetOutputPort("tau"), sim_plant.get_actuation_input_port())
 
-    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
+    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=sim_plant)
     ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
     diagram = builder.Build()
     diagram_context = diagram.CreateDefaultContext()
-    plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
-    set_atlas_initial_pose(plant, plant_context)
+    sim_plant_context = diagram.GetMutableSubsystemContext(sim_plant, diagram_context)
+    set_atlas_initial_pose(sim_plant, sim_plant_context)
     controller_context = diagram.GetMutableSubsystemContext(controller, diagram_context)
     controller.GetInputPort("y_des").FixValue(controller_context, np.array([0.1, 0.0]))
 
