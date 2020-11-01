@@ -19,7 +19,12 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
         pass
 
     def test_apply_angular_velocity_to_quaternion(self):
-        pass
+        q = np.array([1., 0., 0., 0.])
+        w = np.array([1., 0., 0.])
+        t = 1.0
+        q_new = apply_angular_velocity_to_quaternion(q, w, t)
+        q_new_expected = np.array([0.877583, 0.479425, 0.0, 0.0])
+        np.testing.assert_array_almost_equal(q_new, q_new_expected)
 
 class TestHumanoidPlanner(unittest.TestCase):
     def setUp(self):
