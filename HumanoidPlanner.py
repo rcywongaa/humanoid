@@ -63,7 +63,7 @@ def create_r_interpolation(r_traj, rd_traj, rdd_traj, dt_traj):
     rdd_poly = rd_poly.derivative()
     return r_poly, rd_poly, rdd_poly
 
-def applyAngularVelocityToQuaternion(q, w, t):
+def apply_angular_velocity_to_quaternion(q, w, t):
     norm_w = np.linalg.norm(w)
     if norm_w <= epsilon:
         return q
@@ -163,7 +163,7 @@ class HumanoidPlanner:
         As advised in
         https://stackoverflow.com/a/63510131/3177701
         '''
-        ret_quat = q[0:4] - applyAngularVelocityToQuaternion(qprev[0:4], v[0:3], dt[0])
+        ret_quat = q[0:4] - apply_angular_velocity_to_quaternion(qprev[0:4], v[0:3], dt[0])
         ret_linear = (q - qprev - qd)[4:]
         ret = np.hstack([ret_quat, ret_linear])
         # print(ret)
