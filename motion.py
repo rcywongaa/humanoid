@@ -6,9 +6,9 @@ Whole-body Motion Planning with Centroidal Dynamics and Full Kinematics
 by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 '''
 
-from load_atlas import load_atlas, set_atlas_initial_pose
-from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
-from load_atlas import Atlas
+from Atlas import load_atlas, set_atlas_initial_pose
+from Atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
+from Atlas import Atlas
 from pydrake.all import Quaternion
 from pydrake.all import Multiplexer
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource

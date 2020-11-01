@@ -12,9 +12,9 @@ TODO:
 Convert to time-varying y_desired and z_com
 '''
 
-from load_atlas import load_atlas, set_atlas_initial_pose
-from load_atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
-from load_atlas import Atlas
+from Atlas import load_atlas, set_atlas_initial_pose
+from Atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
+from Atlas import Atlas
 import numpy as np
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
