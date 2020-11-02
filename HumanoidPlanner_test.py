@@ -3,8 +3,10 @@ from HumanoidPlanner import create_q_interpolation, create_r_interpolation, appl
 import numpy as np
 from Atlas import Atlas, load_atlas, set_atlas_initial_pose
 import unittest
+import pdb
 
 from pydrake.all import MultibodyPlant
+from pydrake.autodiffutils import initializeAutoDiff
 
 mbp_time_step = 1.0e-3
 
@@ -18,11 +20,21 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
     def test_create_r_interpolation(self):
         pass
 
-    def test_apply_angular_velocity_to_quaternion(self):
+    def test_apply_angular_velocity_to_quaternion_float(self):
         q = np.array([1., 0., 0., 0.])
         w = np.array([1., 0., 0.])
         t = 1.0
         q_new = apply_angular_velocity_to_quaternion(q, w, t)
+        q_new_expected = np.array([0.877583, 0.479425, 0.0, 0.0])
+        np.testing.assert_array_almost_equal(q_new, q_new_expected)
+
+    def test_apply_angular_velocity_to_quaternion_AutoDiffXd(self):
+        # Because initializeAutoDiff automatically converts to 2D arrays
+        q_ad = initializeAutoDiff(np.array([1., 0., 0., 0.])).flatten()
+        w_ad = initializeAutoDiff(np.array([1., 0., 0.])).flatten()
+        t_ad = initializeAutoDiff([1.0]).flatten()[0]
+        q_new_ad = apply_angular_velocity_to_quaternion(q_ad, w_ad, t_ad)
+        q_new = [qi.value() for qi in q_new_ad]
         q_new_expected = np.array([0.877583, 0.479425, 0.0, 0.0])
         np.testing.assert_array_almost_equal(q_new, q_new_expected)
 
