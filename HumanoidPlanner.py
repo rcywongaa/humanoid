@@ -527,8 +527,8 @@ def main():
     q_init = plant.GetPositions(plant_context)
     q_init[6] = 0.94 # Avoid initializing with ground penetration
     q_final = q_init.copy()
-    q_final[4] = 0.5 # x position of pelvis
-    q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
+    q_final[4] = 0.0 # x position of pelvis
+    q_final[6] = 0.7 # z position of pelvis (to make sure final pose touches ground)
     upright_context = plant.CreateDefaultContext()
     set_atlas_initial_pose(plant, upright_context)
     q_nom = plant.GetPositions(upright_context)
