@@ -89,6 +89,7 @@ class Atlas():
             ]).T
     }
 
+    NUM_CONTACTS = sum([contacts.shape[1] for contacts in CONTACTS_PER_FRAME.values()])
     FLOATING_BASE_DOF = 6
     FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions
     NUM_ACTUATED_DOF = 30
