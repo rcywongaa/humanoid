@@ -273,7 +273,7 @@ class HumanoidController(LeafSystem):
                 Jd_qd_foot = self.plant.CalcBiasTranslationalAcceleration(
                     plant_context, JacobianWrtVariable.kV, self.plant.GetFrameByName(frame),
                     active_contacts, self.plant.world_frame(), self.plant.world_frame())
-            Jd_qd_foots.append(Jd_qd_foot.flatten())
+                Jd_qd_foots.append(Jd_qd_foot.flatten())
         Jd_qd = np.concatenate(Jd_qd_foots)
         assert(Jd_qd.shape == (N_c*3,))
         eq12_lhs = J.dot(qdd) + Jd_qd
