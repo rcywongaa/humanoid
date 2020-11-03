@@ -14,7 +14,9 @@ from pydrake.all import Multiplexer
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
-from pydrake.all import MathematicalProgram, Solve, IpoptSolver, eq, le, ge, SolverOptions
+from pydrake.all import MathematicalProgram, Solve, eq, le, ge, SolverOptions
+# from pydrake.all import IpoptSolver
+from pydrake.all import SnoptSolver
 from pydrake.all import Quaternion_, AutoDiffXd
 from HumanoidController import HumanoidController
 import numpy as np
@@ -30,6 +32,13 @@ epsilon = 1e-9
 PLAYBACK_ONLY = False
 ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
 MAX_GROUND_PENETRATION = 1e-2
+MAX_JOINT_ACCELERATION = 20.0
+'''
+Slack for the complementary constraints
+Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
+'''
+# slack = 1e-3
+slack = 1e-2
 
 def create_q_interpolation(plant, context, q_traj, v_traj, dt_traj):
     t_traj = np.cumsum(dt_traj)
@@ -64,6 +73,8 @@ def create_r_interpolation(r_traj, rd_traj, rdd_traj, dt_traj):
     return r_poly, rd_poly, rdd_poly
 
 def apply_angular_velocity_to_quaternion(q, w, t):
+    # This currently returns a runtime warning of division by zero
+    # https://github.com/RobotLocomotion/drake/issues/10451
     norm_w = np.linalg.norm(w)
     if norm_w <= epsilon:
         return q
@@ -113,7 +124,7 @@ class HumanoidPlanner:
             return self.plant_float, self.context_float
 
     '''
-    Creates an np.array of shape [3, num_contacts] where first 2 rows are zeros
+    Creates an np.array of shape [num_contacts, 3] where first 2 rows are zeros
     since we only care about tau in the z direction
     '''
     def toTauj(self, tau_k):
@@ -221,6 +232,15 @@ class HumanoidPlanner:
         cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
         return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
 
+    def pose_error_cost(self, q_v_dt):
+        q, v, dt = np.split(q_v_dt, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        plant, context = self.getPlantAndContext(q, v)
+        Q_q = 1.0 * np.identity(plant.num_velocities())
+        q_err = plant.MapQDotToVelocity(context, q-self.q_nom)
+        return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
+
     def calcTrajectory(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
         N = num_knot_points
         T = max_time
@@ -243,12 +263,6 @@ class HumanoidPlanner:
         tau = prog.NewContinuousVariables(rows=N, cols=self.num_contacts, name="tau") # We assume only z torque exists
         h = prog.NewContinuousVariables(rows=N, cols=3, name="h")
         hd = prog.NewContinuousVariables(rows=N, cols=3, name="hd")
-
-        '''
-        Slack for the complementary constraints
-        Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
-        '''
-        slack = 1e-3
 
         ''' Additional variables not explicitly stated '''
         # Friction cone scale
@@ -377,21 +391,14 @@ class HumanoidPlanner:
                     '''
                     (prog.AddConstraint(lambda F_c_cprev, i=i : self.eq9b_lhs(F_c_cprev, i), ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
                             .evaluator().set_description("Eq(9b)[{k}][{i}]"))
-        # ''' Eq(10) '''
-        # Q_q = 0.1 * np.identity(self.plant_float.num_velocities())
-        # Q_v = 1.0 * np.identity(self.plant_float.num_velocities())
-        # for k in range(N):
-            # def pose_error_cost(q_v_dt):
-                # q, v, dt = np.split(q_v_dt, [
-                    # self.plant_float.num_positions(),
-                    # self.plant_float.num_positions() + self.plant_float.num_velocities()])
-                # plant, context = getPlantAndContext(q, v)
-                # q_err = plant.MapQDotToVelocity(context, q-self.q_nom)
-                # return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
-            # prog.AddCost(pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
-            # prog.AddCost(dt[k]*(
-                    # + v[k].dot(Q_v).dot(v[k])
-                    # + rdd[k].dot(rdd[k])))
+
+        ''' Eq(10) '''
+        for k in range(N):
+            Q_v = 0.5 * np.identity(self.plant_float.num_velocities())
+            prog.AddCost(self.pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
+            prog.AddCost(dt[k]*(
+                    + v[k].dot(Q_v).dot(v[k])
+                    + rdd[k].dot(rdd[k])))
 
         ''' Additional constraints not explicitly stated '''
         ''' Constrain initial pose '''
@@ -410,6 +417,12 @@ class HumanoidPlanner:
         ''' Constrain final velocity '''
         (prog.AddLinearConstraint(eq(v[-1], 0.0))
                 .evaluator().set_description("final velocity"))
+        ''' Constrain final COM velocity '''
+        (prog.AddLinearConstraint(eq(rd[-1], 0.0))
+                .evaluator().set_description("final COM velocity"))
+        ''' Constrain final COM acceleration '''
+        (prog.AddLinearConstraint(eq(rdd[-1], 0.0))
+                .evaluator().set_description("final COM acceleration"))
         ''' Constrain time taken '''
         (prog.AddLinearConstraint(np.sum(dt) <= T)
                 .evaluator().set_description("max time"))
@@ -425,6 +438,12 @@ class HumanoidPlanner:
                 .evaluator().set_description("min timestep"))
         (prog.AddLinearConstraint(le(dt, [0.05]*N))
                 .evaluator().set_description("max timestep"))
+        ''' Constrain max joint acceleration '''
+        for k in range(1, N):
+            (prog.AddLinearConstraint(ge((v[k] - v[k-1]), -MAX_JOINT_ACCELERATION*dt[k]))
+                    .evaluator().set_description(f"min joint acceleration[{k}]"))
+            (prog.AddLinearConstraint(le((v[k] - v[k-1]), MAX_JOINT_ACCELERATION*dt[k]))
+                    .evaluator().set_description(f"max joint acceleration[{k}]"))
         '''
         Constrain unbounded variables to improve IPOPT performance
         because IPOPT is an interior point method which works poorly for unbounded variables
@@ -471,7 +490,7 @@ class HumanoidPlanner:
             self.calc_h(q_guess[i], v_guess[i]) for i in range(N)])
         prog.SetDecisionVariableValueInVector(h, h_guess, initial_guess)
 
-        solver = IpoptSolver()
+        solver = SnoptSolver()
         options = SolverOptions()
         # options.SetOption(solver.solver_id(), "max_iter", 50000)
         # This doesn't seem to do anything...
@@ -480,29 +499,24 @@ class HumanoidPlanner:
         print(f"Start solving...")
         result = solver.Solve(prog, initial_guess, options) # Currently takes around 30 mins
         print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()} Success: {result.is_success()}")
+        self.q_sol = result.GetSolution(q)
+        self.v_sol = result.GetSolution(v)
+        self.dt_sol = result.GetSolution(dt)
+        self.r_sol = result.GetSolution(r)
+        self.rd_sol = result.GetSolution(rd)
+        self.rdd_sol = result.GetSolution(rdd)
+        self.c_sol = result.GetSolution(c)
+        self.F_sol = result.GetSolution(F)
+        self.tau_sol = result.GetSolution(tau)
+        self.h_sol = result.GetSolution(h)
+        self.hd_sol = result.GetSolution(hd)
+        self.beta_sol = result.GetSolution(beta)
         if not result.is_success():
             print(result.GetInfeasibleConstraintNames(prog))
-            q_sol = result.GetSolution(q)
-            v_sol = result.GetSolution(v)
-            dt_sol = result.GetSolution(dt)
-            r_sol = result.GetSolution(r)
-            rd_sol = result.GetSolution(rd)
-            rdd_sol = result.GetSolution(rdd)
-            c_sol = result.GetSolution(c)
-            F_sol = result.GetSolution(F)
-            tau_sol = result.GetSolution(tau)
-            h_sol = result.GetSolution(h)
-            hd_sol = result.GetSolution(hd)
-            beta_sol = result.GetSolution(beta)
             pdb.set_trace()
-        r_sol = result.GetSolution(r)
-        rd_sol = result.GetSolution(rd)
-        rdd_sol = result.GetSolution(rdd)
-        q_sol = result.GetSolution(q)
-        v_sol = result.GetSolution(v)
-        dt_sol = result.GetSolution(dt)
 
-        return r_sol, rd_sol, rdd_sol, q_sol, v_sol, dt_sol
+        return (self.r_sol, self.rd_sol, self.rdd_sol,
+                self.q_sol, self.v_sol, self.dt_sol)
 
 def main():
     builder = DiagramBuilder()
@@ -524,9 +538,9 @@ def main():
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
+    planner = HumanoidPlanner(plant, Atlas.CONTACTS_PER_FRAME, q_nom)
     if not PLAYBACK_ONLY:
         print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
-        planner = HumanoidPlanner(plant, Atlas.CONTACTS_PER_FRAME, q_nom)
         r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = (
                 planner.calcTrajectory(q_init, q_final, num_knot_points, max_time, pelvis_only=True))
 
@@ -536,7 +550,7 @@ def main():
     with open(export_filename, 'rb') as f:
         r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = pickle.load(f)
 
-    controller = builder.AddSystem(HumanoidController(is_wbc=True))
+    controller = builder.AddSystem(HumanoidController(plant, Atlas.CONTACTS_PER_FRAME, is_wbc=True))
     controller.set_name("HumanoidController")
 
     ''' Connect atlas plant to controller '''
@@ -579,8 +593,9 @@ def main():
     diagram = builder.Build()
 
     frame_idx = 0
+    t = 0.0
     while True:
-        print(f"Frame: {frame_idx}")
+        print(f"Frame: {frame_idx}, t: {t}, dt: {dt_traj[frame_idx]}")
         diagram_context = diagram.CreateDefaultContext()
         plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
         plant.SetPositions(plant_context, q_traj[frame_idx])
@@ -588,9 +603,10 @@ def main():
         simulator = Simulator(diagram, diagram_context)
         simulator.set_target_realtime_rate(0.0)
         simulator.AdvanceTo(0)
+        pdb.set_trace()
 
         frame_idx = (frame_idx + 1) % q_traj.shape[0]
-        time.sleep(1)
+        t = t + dt_traj[frame_idx]
 
 if __name__ == "__main__":
     main()
