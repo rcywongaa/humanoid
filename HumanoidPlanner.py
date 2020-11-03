@@ -31,7 +31,7 @@ mu = 1.0 # Coefficient of friction
 epsilon = 1e-9
 PLAYBACK_ONLY = False
 ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
-MAX_GROUND_PENETRATION = 1e-2
+MAX_GROUND_PENETRATION = 0.0
 MAX_JOINT_ACCELERATION = 20.0
 '''
 Slack for the complementary constraints
@@ -525,7 +525,7 @@ def main():
     plant_context = plant.CreateDefaultContext()
 
     q_init = plant.GetPositions(plant_context)
-    q_init[6] = 0.95 # Avoid initializing with ground penetration
+    q_init[6] = 0.94 # Avoid initializing with ground penetration
     q_final = q_init.copy()
     q_final[4] = 0.5 # x position of pelvis
     q_final[6] = 0.90 # z position of pelvis (to make sure final pose touches ground)
@@ -533,8 +533,10 @@ def main():
     set_atlas_initial_pose(plant, upright_context)
     q_nom = plant.GetPositions(upright_context)
 
-    num_knot_points = 30
+    num_knot_points = 40
     max_time = 1.0
+    assert(max_time / num_knot_points > 0.005)
+    assert(max_time / num_knot_points < 0.05)
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
