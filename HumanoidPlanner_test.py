@@ -15,6 +15,18 @@ def assert_autodiff_array_almost_equal(autodiff_array, float_array):
     float_array = np.array([i.value() for i in autodiff_array])
     np.testing.assert_array_almost_equal(float_array, float_array)
 
+def default_q():
+    pelvis_orientation = [1., 0., 0., 0.]
+    pelvis_position = [0., 0., 0.93845] # Feet just touching ground
+    joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
+    return np.array(pelvis_orientation + pelvis_position + joint_positions)
+
+def default_v():
+    pelvis_rotational_velocity = [0., 0., 0.]
+    pelvis_linear_velocity = [0., 0., 0.]
+    joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
+    return np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
+
 class TestHumanoidPlannerStandalone(unittest.TestCase):
     def test_create_q_interpolation(self):
         plant = MultibodyPlant(mbp_time_step)
@@ -27,10 +39,28 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
 
     def test_apply_angular_velocity_to_quaternion_float(self):
         q = np.array([1., 0., 0., 0.])
-        w = np.array([1., 0., 0.])
         t = 1.0
+        w = np.array([1., 0., 0.])
         q_new = apply_angular_velocity_to_quaternion(q, w, t)
         q_new_expected = np.array([0.877583, 0.479425, 0.0, 0.0])
+        np.testing.assert_array_almost_equal(q_new, q_new_expected)
+
+        w = np.array([0., 2., 0.])
+        t = 0.5
+        q_new = apply_angular_velocity_to_quaternion(q, w, t)
+        q_new_expected = np.array([0.877583, 0.0, 0.479425, 0.0])
+        np.testing.assert_array_almost_equal(q_new, q_new_expected)
+
+        w = np.array([0., 0., 0.5])
+        t = 2.0
+        q_new = apply_angular_velocity_to_quaternion(q, w, t)
+        q_new_expected = np.array([0.877583, 0.0, 0.0, 0.479425])
+        np.testing.assert_array_almost_equal(q_new, q_new_expected)
+
+        w = np.array([1., 2., 3.])
+        t = 1.0
+        q_new = apply_angular_velocity_to_quaternion(q, w, t)
+        q_new_expected = np.array([0.13245323570650439, -0.26490647141300877, -0.5298129428260175, -0.7947194142390264])
         np.testing.assert_array_almost_equal(q_new, q_new_expected)
 
     def test_apply_angular_velocity_to_quaternion_AutoDiffXd(self):
@@ -111,10 +141,32 @@ class TestHumanoidPlanner(unittest.TestCase):
         pass
 
     def test_eq7c(self):
-        pass
+        q = default_q()
+        v = default_v()
+        h = np.array([0., 0., 0.])
+        q_v_h = np.concatenate([q, v, h])
+        np.testing.assert_allclose(self.planner.eq7c(q_v_h), 0.)
 
     def test_eq7d(self):
-        pass
+        q = default_q()
+        qprev = default_q()
+        v = default_v()
+        dt = [0.5]
+        q_qprev_v_dt = np.concatenate([q, qprev, v, dt])
+        np.testing.assert_allclose(self.planner.eq7d(q_qprev_v_dt), 0.)
+
+        pelvis_rotational_velocity = [1., 2., 3.]
+        pelvis_linear_velocity = [1., 2., 3.]
+        joint_velocity = [i for i in range(Atlas.NUM_ACTUATED_DOF)]
+        v = np.array(pelvis_rotational_velocity + pelvis_linear_velocity + joint_velocity)
+        # pelvis_orientation = [0.7030059015585651, -0.15777337848854225, 0.487880743779453, 0.4928109609813361]
+        # pelvis_orientation = [0.541, 0.475, 0.192, 0.666]
+        pelvis_orientation = [0.0, 0.0, 0.0, 0.0]
+        pelvis_position = [0.5, 1., 1.5+0.93845]
+        joint_positions = [i*0.5 for i in range(Atlas.NUM_ACTUATED_DOF)]
+        q = np.array(pelvis_orientation + pelvis_position + joint_positions)
+        q_qprev_v_dt = np.concatenate([q, qprev, v, dt])
+        np.testing.assert_allclose(self.planner.eq7d(q_qprev_v_dt), 0., atol=epsilon)
 
     def test_eq7h(self):
         pass
