@@ -444,6 +444,10 @@ class HumanoidPlanner:
                     .evaluator().set_description(f"min joint acceleration[{k}]"))
             (prog.AddLinearConstraint(le((v[k] - v[k-1]), MAX_JOINT_ACCELERATION*dt[k]))
                     .evaluator().set_description(f"max joint acceleration[{k}]"))
+        ''' Constrain unit quaternion '''
+        for k in range(N):
+            (prog.AddConstraint(np.linalg.norm(q[k][0:4]) == 1.)
+                    .evaluator().set_description(f"unit quaternion constraint[{k}]"))
         '''
         Constrain unbounded variables to improve IPOPT performance
         because IPOPT is an interior point method which works poorly for unbounded variables
