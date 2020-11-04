@@ -29,6 +29,7 @@ N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 mu = 1.0 # Coefficient of friction
 epsilon = 1e-9
+quaternion_epsilon = 1e-5
 PLAYBACK_ONLY = False
 ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
 MAX_GROUND_PENETRATION = 0.0
@@ -78,13 +79,16 @@ def apply_angular_velocity_to_quaternion(q, w, t):
     norm_w = np.linalg.norm(w)
     if norm_w <= epsilon:
         return q
+    norm_q = np.linalg.norm(q)
+    if abs(norm_q - 1.0) > quaternion_epsilon:
+        print(f"WARNING: Quaternion {q} with norm {norm_q} not normalized!")
     a = w / norm_w
     if q.dtype == AutoDiffXd:
         delta_q = Quaternion_[AutoDiffXd](np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
-        return Quaternion_[AutoDiffXd](q/np.linalg.norm(q)).multiply(delta_q).wxyz()
+        return Quaternion_[AutoDiffXd](q/norm_q).multiply(delta_q).wxyz()
     else:
         delta_q = Quaternion(np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
-        return Quaternion(q/np.linalg.norm(q)).multiply(delta_q).wxyz()
+        return Quaternion(q/norm_q).multiply(delta_q).wxyz()
 
 class HumanoidPlanner:
     def __init__(self, plant_float, contacts_per_frame, q_nom):
