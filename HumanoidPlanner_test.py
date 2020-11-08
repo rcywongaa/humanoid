@@ -10,6 +10,9 @@ import pdb
 from pydrake.all import MultibodyPlant
 from pydrake.autodiffutils import initializeAutoDiff
 
+g = 9.81
+g_vec = np.array([0, 0, -g])
+
 mbp_time_step = 1.0e-3
 epsilon = 1e-5
 
@@ -92,11 +95,15 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
         expected_input_array = [0.5, 0, 4]
         np.testing.assert_array_almost_equal(input_array, expected_input_array)
 
-        constraint = prog.AddConstraint(le(q, r[0,2] + 2*r[1,0]))
+        z = prog.NewContinuousVariables(2, 'z')
+        z_val = np.array([0.0, 0.5])
+        # https://stackoverflow.com/zuestions/64736910/using-le-or-ge-with-scalar-left-hand-side-creates-unsized-formula-array
+        # constraint = prog.AddConstraint(le(z[1], r[0,2] + 2*r[1,0]))
+        constraint = prog.AddConstraint(le([z[1]], r[0,2] + 2*r[1,0]))
         input_array = create_constraint_input_array(constraint, {
-            "q": q_val,
+            "z": z_val,
             "r": r_val})
-        expected_input_array = [0.5, 3, 2]
+        expected_input_array = [3, 2, 0.5]
         np.testing.assert_array_almost_equal(input_array, expected_input_array)
 
 class TestHumanoidPlanner(unittest.TestCase):
@@ -216,6 +223,52 @@ class TestHumanoidPlanner(unittest.TestCase):
 
     def test_pose_error_cost(self):
         pass
+
+    def test_standing_trajectory(self):
+        N = 2
+        t = 0.5
+        num_contacts = 16
+        contact_dim = 3*16
+        N_d = 4
+        q = np.zeros((N, self.plant.num_positions()))
+        v = np.zeros((N, self.plant.num_velocities()))
+        dt = t/N*np.ones(N)
+        r = np.zeros((N, 3))
+        rd = np.zeros((N, 3))
+        rdd = np.zeros((N, 3))
+        c = np.zeros((N, contact_dim))
+        F = np.zeros((N, contact_dim))
+        tau = np.zeros((N, num_contacts))
+        h = np.zeros((N, 3))
+        hd = np.zeros((N, 3))
+        beta = np.zeros((N, num_contacts*N_d))
+
+        ''' Initialize standing pose '''
+        for i in range(N):
+            q[i][0] = 1.0 # w of quaternion
+            q[i][6] = 0.93845 # z of pelvis
+            # r[i] = self.planner.calc_r(q[i], v[i])
+            # TODO
+            # c[i] = 
+            F[i] = np.array([0., 0., Atlas.M*g / 16] * 16)
+
+        upright_context = self.plant.CreateDefaultContext()
+        set_atlas_initial_pose(self.plant, upright_context)
+        q_nom = self.plant.GetPositions(upright_context)
+        q_init = q_nom.copy()
+        q_init[6] = 0.94 # Avoid initializing with ground penetration
+        q_final = q_init.copy()
+        q_final[4] = 0.0 # x position of pelvis
+        q_final[6] = 0.9 # z position of pelvis (to make sure final pose touches ground)
+
+        num_knot_points = N
+        max_time = 0.09
+        assert(max_time / num_knot_points > 0.005)
+        assert(max_time / num_knot_points < 0.05)
+
+        self.planner.create_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
+        ''' Test all constraints satisfied '''
+        self.assertTrue(self.planner.check_all_constraints(q, v, dt, r, rd, rdd, c, F, tau, h, hd, beta))
 
 if __name__ == "__main__":
     unittest.main()
