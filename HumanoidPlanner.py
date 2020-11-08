@@ -23,6 +23,7 @@ import numpy as np
 import time
 import pdb
 import pickle
+from collections.abc import Iterable 
 
 mbp_time_step = 1.0e-3
 N_d = 4 # friction cone approximated as a i-pyramid
@@ -89,6 +90,34 @@ def apply_angular_velocity_to_quaternion(q, w, t):
     else:
         delta_q = Quaternion(np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
         return Quaternion(q/norm_q).multiply(delta_q).wxyz()
+
+def get_index_of_variable(variables, variable_name):
+    return [str(element) for element in variables].index(variable_name)
+
+def create_constraint_input_array(constraint, name_value_map):
+    processed_name_value_map = name_value_map.copy()
+    ret = np.zeros(len(constraint.variables()))
+    for name, value in name_value_map.items():
+        if isinstance(value, Iterable):
+            # Expand vectors into individual entries
+            it = np.nditer(value, flags=['multi_index', 'refs_ok'])
+            while not it.finished:
+                element_name = name + str(it.multi_index).replace(" ","")
+                processed_name_value_map[element_name] = it.value
+                it.iternext()
+            del processed_name_value_map[name]
+        else:
+            # Rename scalars from 'x' to 'x(0)'
+            element_name = name + "(0)"
+            processed_name_value_map[element_name] = value
+            del processed_name_value_map[name]
+
+    for name, value in processed_name_value_map.items():
+        try:
+            ret[get_index_of_variable(constraint.variables(), name)] = value
+        except ValueError:
+            pass
+    return ret
 
 class HumanoidPlanner:
     def __init__(self, plant_float, contacts_per_frame, q_nom):

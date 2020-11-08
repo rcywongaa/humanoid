@@ -1,5 +1,7 @@
 from HumanoidPlanner import HumanoidPlanner
 from HumanoidPlanner import create_q_interpolation, create_r_interpolation, apply_angular_velocity_to_quaternion
+from HumanoidPlanner import create_constraint_input_array
+from pydrake.all import MathematicalProgram, le, ge
 import numpy as np
 from Atlas import Atlas, load_atlas, set_atlas_initial_pose
 import unittest
@@ -71,6 +73,31 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
         q_new_ad = apply_angular_velocity_to_quaternion(q_ad, w_ad, t_ad)
         q_new_expected = np.array([0.877583, 0.479425, 0.0, 0.0])
         assert_autodiff_array_almost_equal(q_new_ad, q_new_expected)
+
+    def test_create_constraint_input_array(self):
+        prog = MathematicalProgram()
+        q = prog.NewContinuousVariables(1, 'q')
+        r = prog.NewContinuousVariables(rows=2, cols=3, name='r')
+        q_val = 0.5
+        r_val = np.arange(6).reshape((2,3))
+        '''
+        array([[0, 1, 2],
+               [3, 4, 5]])
+        '''
+
+        constraint = prog.AddConstraint(le(q, r[0,0] + 2*r[1,1]))
+        input_array = create_constraint_input_array(constraint, {
+            "q": q_val,
+            "r": r_val})
+        expected_input_array = [0.5, 0, 4]
+        np.testing.assert_array_almost_equal(input_array, expected_input_array)
+
+        constraint = prog.AddConstraint(le(q, r[0,2] + 2*r[1,0]))
+        input_array = create_constraint_input_array(constraint, {
+            "q": q_val,
+            "r": r_val})
+        expected_input_array = [0.5, 3, 2]
+        np.testing.assert_array_almost_equal(input_array, expected_input_array)
 
 class TestHumanoidPlanner(unittest.TestCase):
     def setUp(self):
