@@ -26,7 +26,6 @@ import pickle
 from collections.abc import Iterable 
 
 mbp_time_step = 1.0e-3
-N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
 mu = 1.0 # Coefficient of friction
 epsilon = 1e-9
@@ -144,6 +143,7 @@ class HumanoidPlanner:
         self.num_contacts = sum([contact_points.shape[1] for contact_points in contacts_per_frame.values()])
         self.contact_dim = 3*self.num_contacts
 
+        self.N_d = 4 # friction cone approximated as a i-pyramid
         n = np.array([
             [0],
             [0],
@@ -153,8 +153,8 @@ class HumanoidPlanner:
             [0.0, 0.0, 1.0, -1.0],
             [0.0, 0.0, 0.0, 0.0]])
         # Equivalent to v in HumanoidController.py
-        self.friction_cone_components = np.zeros((N_d, self.num_contacts, N_f))
-        for i in range(N_d):
+        self.friction_cone_components = np.zeros((self.N_d, self.num_contacts, N_f))
+        for i in range(self.N_d):
             for j in range(self.num_contacts):
                 self.friction_cone_components[i,j] = (n+mu*d)[:,i]
 
@@ -286,15 +286,42 @@ class HumanoidPlanner:
         q_err = plant.MapQDotToVelocity(context, q-self.q_nom)
         return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
 
+    def add_eq7a_constraints(self):
+        F = self.F
+        rdd = self.rdd
+        self.eq7a_constraints = []
+        for k in range(self.N):
+            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            constraint = self.prog.AddLinearConstraint(
+                    eq(Atlas.M*rdd[k], np.sum(Fj, axis=0) + Atlas.M*g))
+            constraint.evaluator().set_description(f"Eq(7a)[{k}]")
+            self.eq7a_constraints.append(constraint)
+
+    def check_eq7a_constraints(self, F, rdd):
+        for k in range(self.N):
+            constraint = self.eq7a_constraints[k]
+            input_array = create_constraint_input_array(constraint, {
+                "F": F,
+                "rdd": rdd
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
     def add_eq7b_constraints(self):
+        F = self.F
+        c = self.c
+        tau = self.tau
+        hd = self.hd
+        r = self.r
         self.eq7b_constraints = []
         for k in range(self.N):
-            Fj = np.reshape(self.F[k], (self.num_contacts, 3))
-            cj = np.reshape(self.c[k], (self.num_contacts, 3))
+            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            cj = np.reshape(c[k], (self.num_contacts, 3))
             tauj = self.toTauj(self.tau[k])
-            hd = self.hd
-            r = self.r
-            constraint = self.prog.AddConstraint(eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
+            constraint = self.prog.AddConstraint(
+                    eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
             constraint.evaluator().set_description(f"Eq(7b)[{k}]")
             self.eq7b_constraints.append(constraint)
 
@@ -313,31 +340,478 @@ class HumanoidPlanner:
                 return False
         return True
 
-
-    def add_eq7a_constraints(self):
-        self.eq7a_constraints = []
+    def add_eq7c_constraints(self):
+        q = self.q
+        v = self.v
+        h = self.h
+        self.eq7c_constraints = []
         for k in range(self.N):
-            Fj = np.reshape(self.F[k], (self.num_contacts, 3))
-            constraint = self.prog.AddLinearConstraint(
-                    eq(Atlas.M*self.rdd[k], np.sum(Fj, axis=0) + Atlas.M*g))
-            constraint.evaluator().set_description(f"Eq(7a)[{k}]")
-            self.eq7a_constraints.append(constraint)
+            constraint = self.prog.AddConstraint(self.eq7c,
+                    lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], h[k]]))
+            constraint.evaluator().set_description(f"Eq(7c)[{k}]")
+            self.eq7c_constraints.append(constraint)
 
-    def check_eq7a_constraints(self, F, rdd):
+    def check_eq7c_constraints(self, q, v, h)
         for k in range(self.N):
-            constraint = self.eq7a_constraints[k]
+            constraint = self.eq7c_constraints[k]
             input_array = create_constraint_input_array(constraint, {
-                "F": F,
-                "rdd": rdd
+                "q", q,
+                "v", v,
+                "h", h
             })
             if not constraint.evaluator().CheckSatisfied(input_array):
                 print(f"{constraint.evaluator().get_description()} violated")
                 return False
         return True
 
+    def add_eq7d_constraints(self):
+        q = self.q
+        v = self.v
+        dt = self.dt
+        self.eq7d_constraints = []
+        for k in range(1, self.N):
+            # dt[k] must be converted to an array
+            constraint = self.prog.AddConstraint(self.eq7d,
+                    lb=[0.0]*self.plant_float.num_positions(),
+                    ub=[0.0]*self.plant_float.num_positions(),
+                    vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]]))
+            constraint.evaluator().set_description(f"Eq(7d)[{k}]")
+
+            # Deprecated
+            # '''
+            # Constrain rotation
+            # Taken from Practical Methods for Optimal Control and Estimation by ...
+            # Section 6.8 Reorientation of an Asymmetric Rigid Body
+            # '''
+            # q1 = q[k,0]
+            # q2 = q[k,1]
+            # q3 = q[k,2]
+            # q4 = q[k,3]
+            # w1 = v[k,0]*dt[k]
+            # w2 = v[k,1]*dt[k]
+            # w3 = v[k,2]*dt[k]
+            # # Not sure why reshape is necessary
+            # self.prog.AddConstraint(eq(q[k,0] - q[k-1,0], 0.5*(w1*q4 - w2*q3 + w3*q2)).reshape((1,)))
+            # self.prog.AddConstraint(eq(q[k,1] - q[k-1,1], 0.5*(w1*q3 + w2*q4 - w3*q1)).reshape((1,)))
+            # self.prog.AddConstraint(eq(q[k,2] - q[k-1,2], 0.5*(-w1*q2 + w2*q1 + w3*q4)).reshape((1,)))
+            # self.prog.AddConstraint(eq(q[k,3] - q[k-1,3], 0.5*(-w1*q1 - w2*q2 - w3*q3)).reshape((1,)))
+            # ''' Constrain other positions '''
+            # self.prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
+            self.eq7d_constraints.append(constraint)
+
+    def check_eq7d_constraints(self, q, v, dt):
+        for k in range(1, self.N):
+            constraint = self.eq7d_constraints[k-1]
+            input_array = create_constraint_input_array(constraint, {
+                "q": q,
+                "v": v,
+                "dt": dt
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7e_constraints(self):
+        h = self.h
+        hd = self.hd
+        dt = self.dt
+        self.eq7e_constraints = []
+        for k in range(1, self.N):
+            constraint = self.prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
+            constraint.evaluator().set_description(f"Eq(7e)[{k}]")
+            self.eq7e_constraints.append(constraint)
+
+    def check_eq7e_constraints(self, h, hd, dt):
+        for k in range(1, self.N):
+            constraint = self.eq7e_constraints[k-1]
+            input_array = create_constraint_input_array(constraint, {
+                "h": h,
+                "hd": hd,
+                "dt": dt
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7f_constraints(self):
+        r = self.r
+        rd = self.rd
+        dt = self.dt
+        self.eq7f_constraints = []
+        for k in range(1, self.N):
+            constraint = self.prog.AddConstraint(
+                    eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
+            constraint.evaluator().set_description(f"Eq(7f)[{k}]")
+            self.eq7f_constraints.append(constraint)
+
+    def check_eq7f_constraints(self, r, rd, dt):
+        for k in range(1, self.N):
+            constraint = self.eq7f_constraints[k-1]
+            input_array = create_constraint_input_array(constraint, {
+                "r": r,
+                "rd": rd,
+                "dt": dt
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7g_constraints(self):
+        rd = self.rd
+        rdd = self.rdd
+        dt = self.dt
+        self.eq7g_constraints = []
+        for k in range(1, self.N):
+            constraint = self.prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
+            constraint.evaluator().set_description(f"Eq(7g)[{k}]")
+            self.eq7g_constraints.append(constraint)
+
+    def check_eq7g_constraints(self, rd, rdd, dt):
+        for k in range(1, self.N):
+            constraint = self.eq7g_constraints[k-1]
+            input_array = create_constraint_input_array(constraint, {
+                "rd": rd,
+                "rdd": rdd,
+                "dt": dt
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7h_constraints(self):
+        q = self.q
+        v = self.v
+        r = self.r
+        self.eq7h_constraints = []
+        for k in range(self.N):
+            # COM position has dimension 3
+            constraint = self.prog.AddConstraint(self.eq7h,
+                    lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
+            constraint.evaluator().set_description(f"Eq(7h)[{k}]")
+            self.eq7h_constraints.append(constraint)
+
+    def check_eq7h_constraints(self, q, v, r):
+        for k in range(self.N):
+            constraint = self.eq7h_constraints[k]
+            input_array = create_constraint_input_array(constraint, {
+                "q": q,
+                "v": v,
+                "r": r
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7i_constraints(self):
+        q = self.q
+        v = self.v
+        c = self.c
+        self.eq7i_constraints = []
+        for k in range(self.N):
+            # np.concatenate cannot work q, cj since they have different dimensions
+            constraint = self.prog.AddConstraint(self.eq7i,
+                    lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(),
+                    vars=np.concatenate([q[k], v[k], c[k]]))
+            constraint.evaluator().set_description(f"Eq(7i)[{k}]")
+            self.eq7i_constraints.append(constraint)
+
+    def check_eq7i_constraints(self, q, v, c):
+        for k in range(self.N):
+            constraint = self.eq7i_constraints[k]
+            input_array = create_constraint_input_array(constraint, {
+                "q": q,
+                "v": v,
+                "c", c
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7j_constraints(self):
+        c = self.c
+        self.eq7j_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddBoundingBoxConstraint(
+                    [-10, -10, -MAX_GROUND_PENETRATION]*self.num_contacts,
+                    [10, 10, 10]*self.num_contacts,
+                    c[k])
+            constraint.evaluator().set_description(f"Eq(7j)[{k}]")
+            self.eq7j_constraints.append(constraint)
+
+    def check_eq7j_constraints(self, c):
+        for k in range(self.N):
+            constraint = self.eq7j_constraints[k]
+            input_array = create_constraint_input_array(constraint, {
+                "c": c
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7k_admissable_posture_constraints(self):
+        q = self.q
+        self.eq7k_admissable_posture_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddBoundingBoxConstraint(
+                    self.sorted_joint_position_lower_limits, 
+                    self.sorted_joint_position_upper_limits, 
+                    q[k, Atlas.FLOATING_BASE_QUAT_DOF:])
+            constraint.evaluator().set_description(f"Eq(7k)[{k}] joint position")
+            self.eq7k_admissable_posture_constraints.append(constraint)
+
+    def check_eq7k_admissable_posture_constraints(self, q):
+        for k in range(self.N):
+            constraint = self.eq7k_admissable_posture_constraints[k]
+            input_array = create_constraint_input_array(constraint, {
+                "q": q
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7k_joint_velocity_constraints(self):
+        v = self.v
+        self.eq7k_joint_velocity_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddBoundingBoxConstraint(
+                    -self.sorted_joint_velocity_limits,
+                    self.sorted_joint_velocity_limits,
+                    v[k, Atlas.FLOATING_BASE_DOF:])
+            constraint.evaluator().set_description(f"Eq(7k)[{k}] joint velocity")
+            self.eq7k_velocity_constraints.append(constraint)
+
+    def check_eq7k_joint_velocity_constraints(self, v):
+        for k in range(self.N):
+            constraint = self.eq7k_joint_velocity_constraints[k]
+            input_array = create_constraint_input_array(constraint, {
+                "v": v
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq7k_friction_cone_constraints(self):
+        F = self.F
+        beta = self.beta
+        self.eq7k_friction_cone_constraints = []
+        for k in range(self.N):
+            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            beta_k = np.reshape(beta[k], (self.num_contacts, self.N_d))
+            friction_cone_constraints = []
+            for i in range(self.num_contacts):
+                beta_v = beta_k[i].dot(self.friction_cone_components[:,i,:])
+                constraint = self.prog.AddLinearConstraint(eq(Fj[i], beta_v))
+                constraint.evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint[{i}]")
+                friction_cone_constraints.append(constraint)
+            self.eq7k_friction_cone_constraints.append(friction_cone_constraints)
+
+    def check_eq7k_friction_cone_constraints(self, F, beta):
+        for k in range(self.N):
+            for i in range(self.num_contacts)
+                constraint = self.eq7k_friction_cone_constraints[k][i]
+                input_array = create_constraint_input_array(constraint, {
+                    "F": F,
+                    "beta": beta
+                })
+                if not constraint.evaluator().CheckSatisfied(input_array):
+                    print(f"{constraint.evaluator().get_description()} violated")
+                    return False
+        return True
+
+    def add_eq7k_beta_positive_constraints(self):
+        beta = self.beta
+        self.eq7k_beta_positive_constraints = []
+        for k in range(self.N):
+            beta_positive_constraints = []
+            for b in beta[k]:
+                constraint = self.prog.AddLinearConstraint(b >= 0.0)
+                constraint.evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint")
+                beta_positive_constraints.append(constraint)
+            self.eq7k_beta_positive_constraints.append(beta_positive_constraints)
+
+    def check_eq7k_beta_positive_constraints(self, beta):
+        for k in range(self.N):
+            for i in range(self.num_contacts * self.N_d):
+                constraint = self.eq7k_beta_positive_constraints[k][i]
+                input_array = create_constraint_input_array(constraint, {
+                    "beta": beta
+                })
+                if not constraint.evaluator().CheckSatisfied(input_array):
+                    print(f"{constraint.evaluator().get_description()} violated")
+                    return False
+        return True
+
+    def add_eq7k_torque_constraints(self):
+        tau = self.tau
+        beta = self.beta
+        self.eq7k_torque_constraints = []
+        for k in range(self.N):
+            ''' Constrain torques - assume torque linear to friction cone'''
+            beta_k = np.reshape(beta[k], (self.num_contacts, self.N_d))
+            friction_torque_coefficient = 0.1
+            friction_torque_constraints = []
+            for i in range(self.num_contacts):
+                max_torque = friction_torque_coefficient * np.sum(beta_k[i])
+                upper_constraint = self.prog.AddLinearConstraint(le(tau[k][i], np.array([max_torque])))
+                upper_constraint.evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit")
+                lower_constraint = self.prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
+                lower_constraint.evaluator().set_description(f"Eq(7k)[{k}] friction torque lower limit")
+                friction_torque_constraints.append([upper_constraint, lower_constraint])
+            self.eq7k_torque_constraints.append(friction_torque_constraints)
+
+    def check_eq7k_torque_constraints(self, tau, beta):
+        for k in range(self.N):
+            for i in range(self.num_contacts):
+                upper_constraint = self.eq7k_torque_constraints[k][i][0]
+                input_array = create_constraint_input_array(upper_constraint, {
+                    "tau": tau,
+                    "beta": beta
+                })
+                if not upper_constraint.evaluator().CheckSatisfied(input_array):
+                    print(f"{upper_constraint.evaluator().get_description()} violated")
+                    return False
+
+                lower_constraint = self.eq7k_torque_constraints[k][i][1]
+                input_array = create_constraint_input_array(lower_constraint, {
+                    "tau": tau,
+                    "beta": beta
+                })
+                if not lower_constraint.evaluator().CheckSatisfied(input_array):
+                    print(f"{lower_constraint.evaluator().get_description()} violated")
+                    return False
+        return True
+
+    def add_eq8a_constraints(self):
+        q = self.q
+        v = self.v
+        F = self.F
+        self.eq8a_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddConstraint(
+                    self.eq8a_lhs,
+                    lb=[-slack],
+                    ub=[slack],
+                    vars=np.concatenate([q[k], v[k], F[k]]))
+            constraint.evaluator().set_description(f"Eq(8a)[{k}]")
+            self.eq8a_constraints.append(constraint)
+
+    def check_eq8a_constraints(self, q, v, F):
+        for k in range(self.N):
+            constraint = self.eq8a_constraints[k]
+            input_arra = create_constraint_input_array(constraint, {
+                "q": q,
+                "v": v,
+                "F": F
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq8b_constraints(self):
+        q = self.q
+        v = self.v
+        tau = self.tau
+        self.eq8b_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddConstraint(
+                    self.eq8b_lhs,
+                    lb=[-slack]*3,
+                    ub=[slack]*3,
+                    vars=np.concatenate([q[k], v[k], tau[k]]))
+            constraint.evaluator().set_description(f"Eq(8b)[{k}]")
+            self.eq8b_constraints.append(constraint)
+
+    def check_eq8b_constraints(self, q, v, tau):
+        for k in range(self.N):
+            constraint = self.eq8b_constraints[k]
+            input_arra = create_constraint_input_array(constraint, {
+                "q": q,
+                "v": v,
+                "tau": tau
+            })
+            if not constraint.evaluator().CheckSatisfied(input_array):
+                print(f"{constraint.evaluator().get_description()} violated")
+                return False
+        return True
+
+    def add_eq8c_contact_force_constraints(self):
+        F = self.F
+        self.eq8c_contact_force_constraints = []
+        for k in range(self.N):
+            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            constraint = self.prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
+            constraint.evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero")
+            self.eq8c_contact_force_constraints.append(constraint)
+
+    def add_eq8c_contact_distance_constraint(self):
+        q = self.q
+        v = self.v
+        self.eq8c_contact_distance_constraints = []
+        for k in range(self.N):
+            # TODO: Why can't this be converted to a linear constraint?
+            constraint = self.prog.AddConstraint(self.eq8c_2,
+                    lb=[-MAX_GROUND_PENETRATION]*self.num_contacts,
+                    ub=[float('inf')]*self.num_contacts,
+                    vars=np.concatenate([q[k], v[k]]))
+            constraint.evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero")
+            self.eq8c_contact_distance_constraints.append(constraint)
+
+    def add_eq9a_constraints(self):
+        F = self.F
+        c = self.c
+        self.eq9a_constraints = []
+        for k in range(1, self.N):
+            contact_constraints = []
+            for i in range(self.num_contacts):
+                '''
+                i=i is used to capture the outer scope i variable
+                https://stackoverflow.com/a/2295372/3177701
+                '''
+                constraint = self.prog.AddConstraint(
+                        lambda F_c_cprev, i=i : self.eq9a_lhs(F_c_cprev, i),
+                        ub=[slack],
+                        lb=[-slack],
+                        vars=np.concatenate([F[k], c[k], c[k-1]]))
+                constraint.evaluator().set_description("Eq(9a)[{k}][{i}]")
+                contact_constraints.append(constraint)
+            self.eq9a_constraints.append(contact_constraints)
+
+    def add_eq9b_constraints(self):
+        F = self.F
+        c = self.c
+        self.eq9b_constraints = []
+        for k in range(1, self.N):
+            contact_constraints = []
+            for i in range(self.num_contacts):
+                '''
+                i=i is used to capture the outer scope i variable
+                https://stackoverflow.com/a/2295372/3177701
+                '''
+                constraint = self.prog.AddConstraint(
+                        lambda F_c_cprev, i=i : self.eq9b_lhs(F_c_cprev, i),
+                        ub=[slack],
+                        lb=[-slack],
+                        vars=np.concatenate([F[k], c[k], c[k-1]]))
+                constraint.evaluator().set_description("Eq(9b)[{k}][{i}]")
+                contact_constraints.append(constraint)
+            self.eq9b_constraints.append(contact_constraints)
+
     def check_all_constraints(self, q, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
         return (self.check_eq7a_constraints(F, rdd)
-                and self.check_eq7b_constraints(F, c, tau, hd, r))
+                and self.check_eq7b_constraints(F, c, tau, hd, r)
+                and self.check_eq7c_constraints(q, v, h)
+                and self.check_eq7d_constraints(q, v, dt)
+                and self.check_eq7h_constraints(q, v, r))
 
     def create_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
         self.N = num_knot_points
@@ -360,7 +834,7 @@ class HumanoidPlanner:
 
         ''' Additional variables not explicitly stated '''
         # Friction cone scale
-        self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*N_d, name="beta")
+        self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
         ''' Rename variables for easier typing... '''
         q = self.q
@@ -378,121 +852,19 @@ class HumanoidPlanner:
 
         self.add_eq7a_constraints()
         self.add_eq7b_constraints()
-        for k in range(self.N):
-            Fj = np.reshape(F[k], (self.num_contacts, 3))
-            cj = np.reshape(c[k], (self.num_contacts, 3))
-            ''' Eq(7c) '''
-            (self.prog.AddConstraint(self.eq7c, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], h[k]]))
-                .evaluator().set_description(f"Eq(7c)[{k}]"))
-            ''' Eq(7h) '''
-            # COM position has dimension 3
-            (self.prog.AddConstraint(self.eq7h, lb=[0]*3, ub=[0]*3, vars=np.concatenate([q[k], v[k], r[k]]))
-                    .evaluator().set_description(f"Eq(7h)[{k}]"))
-            ''' Eq(7i) '''
-            # np.concatenate cannot work q, cj since they have different dimensions
-            (self.prog.AddConstraint(self.eq7i, lb=np.zeros(c[k].shape).flatten(), ub=np.zeros(c[k].shape).flatten(), vars=np.concatenate([q[k], v[k], c[k]]))
-                    .evaluator().set_description(f"Eq(7i)[{k}]"))
-            ''' Eq(7j) '''
-            (self.prog.AddBoundingBoxConstraint([-10, -10, -MAX_GROUND_PENETRATION]*self.num_contacts, [10, 10, 10]*self.num_contacts, c[k])
-                    .evaluator().set_description(f"Eq(7j)[{k}]"))
-            ''' Eq(7k) '''
-            ''' Constrain admissible posture '''
-            (self.prog.AddBoundingBoxConstraint(self.sorted_joint_position_lower_limits, self.sorted_joint_position_upper_limits,
-                    q[k, Atlas.FLOATING_BASE_QUAT_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint position"))
-            ''' Constrain velocities '''
-            (self.prog.AddBoundingBoxConstraint(-self.sorted_joint_velocity_limits, self.sorted_joint_velocity_limits,
-                v[k, Atlas.FLOATING_BASE_DOF:]).evaluator().set_description(f"Eq(7k)[{k}] joint velocity"))
-            ''' Constrain forces within friction cone '''
-            beta_k = np.reshape(beta[k], (self.num_contacts, N_d))
-            for i in range(self.num_contacts):
-                beta_v = beta_k[i].dot(self.friction_cone_components[:,i,:])
-                (self.prog.AddLinearConstraint(eq(Fj[i], beta_v))
-                        .evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint[{i}]"))
-            ''' Constrain beta positive '''
-            for b in beta_k.flat:
-                (self.prog.AddLinearConstraint(b >= 0.0)
-                        .evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint"))
-            ''' Constrain torques - assume torque linear to friction cone'''
-            friction_torque_coefficient = 0.1
-            for i in range(self.num_contacts):
-                max_torque = friction_torque_coefficient * np.sum(beta_k[i])
-                (self.prog.AddLinearConstraint(le(tau[k][i], np.array([max_torque])))
-                        .evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit"))
-                (self.prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
-                        .evaluator().set_description(f"Eq(7k)[{k}] friction torque lower limit"))
-
-            if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
-                ''' Eq(8a) '''
-                (self.prog.AddConstraint(self.eq8a_lhs, lb=[-slack], ub=[slack], vars=np.concatenate([q[k], v[k], F[k]]))
-                        .evaluator().set_description(f"Eq(8a)[{k}]"))
-                ''' Eq(8b) '''
-                (self.prog.AddConstraint(self.eq8b_lhs, lb=[-slack]*3, ub=[slack]*3, vars=np.concatenate([q[k], v[k], tau[k]]))
-                        .evaluator().set_description(f"Eq(8b)[{k}]"))
-                ''' Eq(8c) '''
-                (self.prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
-                        .evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero"))
-                # TODO: Why can't this be converted to a linear constraint?
-                (self.prog.AddConstraint(self.eq8c_2, lb=[-MAX_GROUND_PENETRATION]*self.num_contacts, ub=[float('inf')]*self.num_contacts, vars=np.concatenate([q[k], v[k]]))
-                        .evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero"))
-
-        for k in range(1, self.N):
-            ''' Eq(7d) '''
-            # dt[k] must be converted to an array
-            (self.prog.AddConstraint(self.eq7d, lb=[0.0]*self.plant_float.num_positions(), ub=[0.0]*self.plant_float.num_positions(),
-                    vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]]))
-                .evaluator().set_description(f"Eq(7d)[{k}]"))
-
-            # Deprecated
-            # '''
-            # Constrain rotation
-            # Taken from Practical Methods for Optimal Control and Estimation by ...
-            # Section 6.8 Reorientation of an Asymmetric Rigid Body
-            # '''
-            # q1 = q[k,0]
-            # q2 = q[k,1]
-            # q3 = q[k,2]
-            # q4 = q[k,3]
-            # w1 = v[k,0]*dt[k]
-            # w2 = v[k,1]*dt[k]
-            # w3 = v[k,2]*dt[k]
-            # # Not sure why reshape is necessary
-            # self.prog.AddConstraint(eq(q[k,0] - q[k-1,0], 0.5*(w1*q4 - w2*q3 + w3*q2)).reshape((1,)))
-            # self.prog.AddConstraint(eq(q[k,1] - q[k-1,1], 0.5*(w1*q3 + w2*q4 - w3*q1)).reshape((1,)))
-            # self.prog.AddConstraint(eq(q[k,2] - q[k-1,2], 0.5*(-w1*q2 + w2*q1 + w3*q4)).reshape((1,)))
-            # self.prog.AddConstraint(eq(q[k,3] - q[k-1,3], 0.5*(-w1*q1 - w2*q2 - w3*q3)).reshape((1,)))
-            # ''' Constrain other positions '''
-            # self.prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
-
-            ''' Eq(7e) '''
-            (self.prog.AddConstraint(eq(h[k] - h[k-1], hd[k]*dt[k]))
-                .evaluator().set_description(f"Eq(7e)[{k}]"))
-            ''' Eq(7f) '''
-            (self.prog.AddConstraint(eq(r[k] - r[k-1], (rd[k] + rd[k-1])/2*dt[k]))
-                .evaluator().set_description(f"Eq(7f)[{k}]"))
-            ''' Eq(7g) '''
-            (self.prog.AddConstraint(eq(rd[k] - rd[k-1], rdd[k]*dt[k]))
-                .evaluator().set_description(f"Eq(7g)[{k}]"))
-
-            Fj = np.reshape(F[k], (self.num_contacts, 3))
-            cj = np.reshape(c[k], (self.num_contacts, 3))
-            cj_prev = np.reshape(c[k-1], (self.num_contacts, 3))
-
-            if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
-                for i in range(self.num_contacts):
-                    ''' Eq(9a) '''
-                    '''
-                    i=i is used to capture the outer scope i variable
-                    https://stackoverflow.com/a/2295372/3177701
-                    '''
-                    (self.prog.AddConstraint(lambda F_c_cprev, i=i : self.eq9a_lhs(F_c_cprev, i), ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
-                            .evaluator().set_description("Eq(9a)[{k}][{i}]"))
-                    ''' Eq(9b) '''
-                    '''
-                    i=i is used to capture the outer scope i variable
-                    https://stackoverflow.com/a/2295372/3177701
-                    '''
-                    (self.prog.AddConstraint(lambda F_c_cprev, i=i : self.eq9b_lhs(F_c_cprev, i), ub=[slack], lb=[-slack], vars=np.concatenate([F[k], c[k], c[k-1]]))
-                            .evaluator().set_description("Eq(9b)[{k}][{i}]"))
+        self.add_eq7c_constraints()
+        self.add_eq7d_constraints()
+        self.add_eq7e_constraints()
+        self.add_eq7f_constraints()
+        self.add_eq7g_constraints()
+        self.add_eq7h_constraints()
+        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+            self.add_eq8a_constraints()
+            self.add_eq8b_constraints()
+            self.add_eq8c_contact_force_constraints()
+            self.add_eq8c_contact_distance_constraint()
+            self.add_eq9a_constraints()
+            self.add_eq9b_constraints()
 
         ''' Eq(10) '''
         for k in range(self.N):
