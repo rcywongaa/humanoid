@@ -127,6 +127,20 @@ def create_constraint_input_array(constraint, name_value_map):
     assert(not np.isnan(ret).any())
     return ret
 
+def check_constraint(constraint, input_map):
+    input_array = create_constraint_input_array(constraint, input_map)
+    if constraint.evaluator().CheckSatisfied(input_array):
+        return True
+    else:
+        print(f"{constraint.evaluator().get_description()} violated!")
+        return False
+
+def check_constraints(constraints, input_map):
+    for constraint in flatten(constraints):
+        if not check_constraint(constraint, input_map):
+            return False
+    return True
+
 class HumanoidPlanner:
     def __init__(self, plant_float, contacts_per_frame, q_nom):
         self.plant_float = plant_float
@@ -298,16 +312,10 @@ class HumanoidPlanner:
             self.eq7a_constraints.append(constraint)
 
     def check_eq7a_constraints(self, F, rdd):
-        for k in range(self.N):
-            constraint = self.eq7a_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "F": F,
-                "rdd": rdd
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7a_constraints, {
+            "F": F,
+            "rdd": rdd
+        })
 
     def add_eq7b_constraints(self):
         F = self.F
@@ -326,19 +334,13 @@ class HumanoidPlanner:
             self.eq7b_constraints.append(constraint)
 
     def check_eq7b_constraints(self, F, c, tau, hd, r):
-        for k in range(self.N):
-            constraint = self.eq7b_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "F": F,
-                "c": c,
-                "tau": tau,
-                "hd": hd,
-                "r": r
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7b_constraints, {
+            "F": F,
+            "c": c,
+            "tau": tau,
+            "hd": hd,
+            "r": r
+        })
 
     def add_eq7c_constraints(self):
         q = self.q
@@ -351,18 +353,12 @@ class HumanoidPlanner:
             constraint.evaluator().set_description(f"Eq(7c)[{k}]")
             self.eq7c_constraints.append(constraint)
 
-    def check_eq7c_constraints(self, q, v, h)
-        for k in range(self.N):
-            constraint = self.eq7c_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "q", q,
-                "v", v,
-                "h", h
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+    def check_eq7c_constraints(self, q, v, h):
+        return check_constraints(self.eq7c_constraints, {
+            "q", q,
+            "v", v,
+            "h", h
+        })
 
     def add_eq7d_constraints(self):
         q = self.q
@@ -400,17 +396,11 @@ class HumanoidPlanner:
             self.eq7d_constraints.append(constraint)
 
     def check_eq7d_constraints(self, q, v, dt):
-        for k in range(1, self.N):
-            constraint = self.eq7d_constraints[k-1]
-            input_array = create_constraint_input_array(constraint, {
-                "q": q,
-                "v": v,
-                "dt": dt
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7d_constraints, {
+            "q": q,
+            "v": v,
+            "dt": dt
+        })
 
     def add_eq7e_constraints(self):
         h = self.h
@@ -423,17 +413,11 @@ class HumanoidPlanner:
             self.eq7e_constraints.append(constraint)
 
     def check_eq7e_constraints(self, h, hd, dt):
-        for k in range(1, self.N):
-            constraint = self.eq7e_constraints[k-1]
-            input_array = create_constraint_input_array(constraint, {
-                "h": h,
-                "hd": hd,
-                "dt": dt
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7e_constraints, {
+            "h": h,
+            "hd": hd,
+            "dt": dt
+        })
 
     def add_eq7f_constraints(self):
         r = self.r
@@ -447,17 +431,11 @@ class HumanoidPlanner:
             self.eq7f_constraints.append(constraint)
 
     def check_eq7f_constraints(self, r, rd, dt):
-        for k in range(1, self.N):
-            constraint = self.eq7f_constraints[k-1]
-            input_array = create_constraint_input_array(constraint, {
-                "r": r,
-                "rd": rd,
-                "dt": dt
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7f_constraints, {
+            "r": r,
+            "rd": rd,
+            "dt": dt
+        })
 
     def add_eq7g_constraints(self):
         rd = self.rd
@@ -470,17 +448,11 @@ class HumanoidPlanner:
             self.eq7g_constraints.append(constraint)
 
     def check_eq7g_constraints(self, rd, rdd, dt):
-        for k in range(1, self.N):
-            constraint = self.eq7g_constraints[k-1]
-            input_array = create_constraint_input_array(constraint, {
-                "rd": rd,
-                "rdd": rdd,
-                "dt": dt
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7g_constraints, {
+            "rd": rd,
+            "rdd": rdd,
+            "dt": dt
+        })
 
     def add_eq7h_constraints(self):
         q = self.q
@@ -495,17 +467,11 @@ class HumanoidPlanner:
             self.eq7h_constraints.append(constraint)
 
     def check_eq7h_constraints(self, q, v, r):
-        for k in range(self.N):
-            constraint = self.eq7h_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "q": q,
-                "v": v,
-                "r": r
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7h_constraints, {
+            "q": q,
+            "v": v,
+            "r": r
+        })
 
     def add_eq7i_constraints(self):
         q = self.q
@@ -521,17 +487,11 @@ class HumanoidPlanner:
             self.eq7i_constraints.append(constraint)
 
     def check_eq7i_constraints(self, q, v, c):
-        for k in range(self.N):
-            constraint = self.eq7i_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "q": q,
-                "v": v,
-                "c", c
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7i_constraints, {
+            "q": q,
+            "v": v,
+            "c": c
+        })
 
     def add_eq7j_constraints(self):
         c = self.c
@@ -545,15 +505,9 @@ class HumanoidPlanner:
             self.eq7j_constraints.append(constraint)
 
     def check_eq7j_constraints(self, c):
-        for k in range(self.N):
-            constraint = self.eq7j_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "c": c
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7j_constraints, {
+            "c": c
+        })
 
     def add_eq7k_admissable_posture_constraints(self):
         q = self.q
@@ -567,15 +521,9 @@ class HumanoidPlanner:
             self.eq7k_admissable_posture_constraints.append(constraint)
 
     def check_eq7k_admissable_posture_constraints(self, q):
-        for k in range(self.N):
-            constraint = self.eq7k_admissable_posture_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "q": q
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7k_admissable_posture_constraints, {
+            "q": q
+        })
 
     def add_eq7k_joint_velocity_constraints(self):
         v = self.v
@@ -586,18 +534,12 @@ class HumanoidPlanner:
                     self.sorted_joint_velocity_limits,
                     v[k, Atlas.FLOATING_BASE_DOF:])
             constraint.evaluator().set_description(f"Eq(7k)[{k}] joint velocity")
-            self.eq7k_velocity_constraints.append(constraint)
+            self.eq7k_joint_velocity_constraints.append(constraint)
 
     def check_eq7k_joint_velocity_constraints(self, v):
-        for k in range(self.N):
-            constraint = self.eq7k_joint_velocity_constraints[k]
-            input_array = create_constraint_input_array(constraint, {
-                "v": v
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq7k_joint_velocity_constraints, {
+            "v": v
+        })
 
     def add_eq7k_friction_cone_constraints(self):
         F = self.F
@@ -606,49 +548,31 @@ class HumanoidPlanner:
         for k in range(self.N):
             Fj = np.reshape(F[k], (self.num_contacts, 3))
             beta_k = np.reshape(beta[k], (self.num_contacts, self.N_d))
-            friction_cone_constraints = []
             for i in range(self.num_contacts):
                 beta_v = beta_k[i].dot(self.friction_cone_components[:,i,:])
                 constraint = self.prog.AddLinearConstraint(eq(Fj[i], beta_v))
                 constraint.evaluator().set_description(f"Eq(7k)[{k}] friction cone constraint[{i}]")
-                friction_cone_constraints.append(constraint)
-            self.eq7k_friction_cone_constraints.append(friction_cone_constraints)
+                self.eq7k_friction_cone_constraints.append(constraint)
 
     def check_eq7k_friction_cone_constraints(self, F, beta):
-        for k in range(self.N):
-            for i in range(self.num_contacts)
-                constraint = self.eq7k_friction_cone_constraints[k][i]
-                input_array = create_constraint_input_array(constraint, {
-                    "F": F,
-                    "beta": beta
-                })
-                if not constraint.evaluator().CheckSatisfied(input_array):
-                    print(f"{constraint.evaluator().get_description()} violated")
-                    return False
-        return True
+        return check_constraints(self.eq7k_friction_cone_constraints, {
+            "F": F,
+            "beta": beta
+        })
 
     def add_eq7k_beta_positive_constraints(self):
         beta = self.beta
         self.eq7k_beta_positive_constraints = []
         for k in range(self.N):
-            beta_positive_constraints = []
             for b in beta[k]:
                 constraint = self.prog.AddLinearConstraint(b >= 0.0)
                 constraint.evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint")
-                beta_positive_constraints.append(constraint)
-            self.eq7k_beta_positive_constraints.append(beta_positive_constraints)
+                self.eq7k_beta_positive_constraints.append(constraint)
 
     def check_eq7k_beta_positive_constraints(self, beta):
-        for k in range(self.N):
-            for i in range(self.num_contacts * self.N_d):
-                constraint = self.eq7k_beta_positive_constraints[k][i]
-                input_array = create_constraint_input_array(constraint, {
-                    "beta": beta
-                })
-                if not constraint.evaluator().CheckSatisfied(input_array):
-                    print(f"{constraint.evaluator().get_description()} violated")
-                    return False
-        return True
+        return check_constraints(self.eq7k_beta_positive_constraints, {
+            "beta": beta
+        })
 
     def add_eq7k_torque_constraints(self):
         tau = self.tau
@@ -669,26 +593,10 @@ class HumanoidPlanner:
             self.eq7k_torque_constraints.append(friction_torque_constraints)
 
     def check_eq7k_torque_constraints(self, tau, beta):
-        for k in range(self.N):
-            for i in range(self.num_contacts):
-                upper_constraint = self.eq7k_torque_constraints[k][i][0]
-                input_array = create_constraint_input_array(upper_constraint, {
-                    "tau": tau,
-                    "beta": beta
-                })
-                if not upper_constraint.evaluator().CheckSatisfied(input_array):
-                    print(f"{upper_constraint.evaluator().get_description()} violated")
-                    return False
-
-                lower_constraint = self.eq7k_torque_constraints[k][i][1]
-                input_array = create_constraint_input_array(lower_constraint, {
-                    "tau": tau,
-                    "beta": beta
-                })
-                if not lower_constraint.evaluator().CheckSatisfied(input_array):
-                    print(f"{lower_constraint.evaluator().get_description()} violated")
-                    return False
-        return True
+        return check_constraints(self.eq7k_torque_constraints, {
+            "tau": tau,
+            "beta": beta
+        })
 
     def add_eq8a_constraints(self):
         q = self.q
@@ -705,17 +613,11 @@ class HumanoidPlanner:
             self.eq8a_constraints.append(constraint)
 
     def check_eq8a_constraints(self, q, v, F):
-        for k in range(self.N):
-            constraint = self.eq8a_constraints[k]
-            input_arra = create_constraint_input_array(constraint, {
-                "q": q,
-                "v": v,
-                "F": F
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq8a_constraints, {
+            "q": q,
+            "v": v,
+            "F": F
+        })
 
     def add_eq8b_constraints(self):
         q = self.q
@@ -732,17 +634,11 @@ class HumanoidPlanner:
             self.eq8b_constraints.append(constraint)
 
     def check_eq8b_constraints(self, q, v, tau):
-        for k in range(self.N):
-            constraint = self.eq8b_constraints[k]
-            input_arra = create_constraint_input_array(constraint, {
-                "q": q,
-                "v": v,
-                "tau": tau
-            })
-            if not constraint.evaluator().CheckSatisfied(input_array):
-                print(f"{constraint.evaluator().get_description()} violated")
-                return False
-        return True
+        return check_constraints(self.eq8b_constraints, {
+            "q": q,
+            "v": v,
+            "tau": tau
+        })
 
     def add_eq8c_contact_force_constraints(self):
         F = self.F
@@ -752,6 +648,11 @@ class HumanoidPlanner:
             constraint = self.prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
             constraint.evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero")
             self.eq8c_contact_force_constraints.append(constraint)
+
+    def check_eq8c_contact_force_constraints(self, F):
+        return check_constraints(self.eq8c_contact_force_constraints, {
+            "F": F
+        })
 
     def add_eq8c_contact_distance_constraint(self):
         q = self.q
@@ -765,6 +666,12 @@ class HumanoidPlanner:
                     vars=np.concatenate([q[k], v[k]]))
             constraint.evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero")
             self.eq8c_contact_distance_constraints.append(constraint)
+
+    def check_eq8c_contact_distance_constraint(self, q, v):
+        return check_constraints(self.eq8c_contact_distance_constraints, {
+            "q": q,
+            "v": v
+        })
 
     def add_eq9a_constraints(self):
         F = self.F
@@ -786,6 +693,12 @@ class HumanoidPlanner:
                 contact_constraints.append(constraint)
             self.eq9a_constraints.append(contact_constraints)
 
+    def check_eq9a_constraints(self, F, c):
+        return check_constraints(self.eq9a_constraints, {
+            "F": F,
+            "c": c
+        })
+
     def add_eq9b_constraints(self):
         F = self.F
         c = self.c
@@ -806,6 +719,156 @@ class HumanoidPlanner:
                 contact_constraints.append(constraint)
             self.eq9b_constraints.append(contact_constraints)
 
+    def check_eq9b_constraints(self, F, c):
+        return check_constraints(self.eq9b_constraints, {
+            "F": F,
+            "c": c
+        })
+
+    def add_initial_pose_constraints(self):
+        q = self.q
+        self.initial_pose_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(q[0], self.q_init))
+        constraint.evaluator().set_description("initial pose")
+        self.initial_pose_constraints.append(constraint)
+
+    def check_initial_pose_constraints(self, q):
+        return check_constraints(self.initial_pose_constraints, {
+            "q": q,
+        })
+
+    def add_initial_velocity_constraints(self):
+        v = self.v
+        self.initial_velocity_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(v[0], 0.0))
+        constraint.evaluator().set_description("initial velocity")
+        self.initial_velocity_constraints.append(constraint)
+
+    def check_initial_velocity_constraints(self, v):
+        return check_constraints(self.initial_velocity_constraints, {
+            "v": v
+        })
+
+    def add_final_pose_constraints(self):
+        q = self.q
+        self.final_pose_constraints = []
+        if self.pelvis_only:
+            constraint = self.prog.AddLinearConstraint(eq(q[-1, 0:7], self.q_final[0:7]))
+            constraint.evaluator().set_description("final pose")
+        else:
+            constraint = self.prog.AddLinearConstraint(eq(q[-1], self.q_final))
+            constraint.evaluator().set_description("final pose")
+        self.final_pose_constraints.append(constraint)
+
+    def check_final_pose_constraints(self, q):
+        return check_constraints(self.final_pose_constraints, {
+            "q": q
+        })
+
+    def add_final_velocity_constraints(self):
+        v = self.v
+        self.final_velocity_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(v[-1], 0.0))
+        constraint.evaluator().set_description("final velocity")
+        self.final_velocity_constraints.append(constraint)
+
+    def check_final_velocity_constraints(self, v):
+        return check_constraints(self.final_velocity_constraints, {
+            "v": v
+        })
+
+    def add_final_COM_velocity_constraints(self):
+        rd = self.rd
+        self.final_COM_velocity_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(rd[-1], 0.0))
+        constraint.evaluator().set_description("final COM velocity")
+        self.final_COM_velocity_constraints.append(constraint)
+
+    def check_final_COM_velocity_constraints(self, rd):
+        return check_constraints(self.final_COM_velocity_constraints, {
+            "rd": rd
+        })
+
+    def add_final_COM_acceleration_constraints(self):
+        rdd = self.rdd
+        self.final_COM_acceleration_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(rdd[-1], 0.0))
+        constraint.evaluator().set_description("final COM acceleration")
+        self.final_COM_acceleration_constraints.append(constraint)
+
+    def check_final_COM_acceleration_constraints(self, rdd):
+        return check_constraints(self.final_COM_acceleration_constraints, {
+            "rdd": rdd
+        })
+
+    def add_max_time_constraints(self):
+        dt = self.dt
+        self.max_time_constraints = []
+        constraint = self.prog.AddLinearConstraint(np.sum(dt) <= self.T)
+        constraint.evaluator().set_description("max time")
+        self.max_time_constraints.append(constraint)
+
+    def check_max_time_constraints(self, dt):
+        return check_constraints(self.max_time_constraints, {
+            "dt": dt
+        })
+
+    def add_timestep_constraints(self):
+        dt = self.dt
+        self.timestep_constraints = []
+
+        # Note that the first time step is only used in the initial cost calculation
+        # and not in the backwards Euler
+        constraint = self.prog.AddLinearConstraint(dt[0] == 0)
+        constraint.evaluator().set_description("first timestep")
+        self.timestep_constraints.append(constraint)
+
+        # Values taken from
+        # https://colab.research.google.com/github/RussTedrake/underactuated/blob/master/exercises/simple_legs/compass_gait_limit_cycle/compass_gait_limit_cycle.ipynb
+        constraint = self.prog.AddLinearConstraint(ge(dt[1:], [0.005]*(self.N-1)))
+        constraint.evaluator().set_description("min timestep")
+        self.timestep_constraints.append(constraint)
+        constraint = self.prog.AddLinearConstraint(le(dt, [0.05]*self.N))
+        constraint.evaluator().set_description("max timestep")
+        self.timestep_constraints.append(constraint)
+
+    def check_timestep_constraints(self, dt):
+        return check_constraints(self.timestep_constraints, {
+            "dt": dt
+        })
+
+    def add_joint_acceleration_constraints(self):
+        v = self.v
+        dt = self.dt
+        self.joint_acceleration_constraints = []
+        ''' Constrain max joint acceleration '''
+        for k in range(1, self.N):
+            constraint = self.prog.AddLinearConstraint(ge((v[k] - v[k-1])[6:], -MAX_JOINT_ACCELERATION*dt[k]))
+            constraint.evaluator().set_description(f"min joint acceleration[{k}]")
+            self.joint_acceleration_constraints.append(constraint)
+            constraint = self.prog.AddLinearConstraint(le((v[k] - v[k-1])[6:], MAX_JOINT_ACCELERATION*dt[k]))
+            constraint.evaluator().set_description(f"max joint acceleration[{k}]")
+            self.joint_acceleration_constraints.append(constraint)
+
+    def check_joint_acceleration_constraints(self, v, dt):
+        return check_constraints(self.joint_acceleration_constraints, {
+            "v": v,
+            "dt": dt
+        })
+
+    def add_unit_quaternion_constraints(self):
+        q = self.q
+        self.unit_quaternion_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddConstraint(np.linalg.norm(q[k][0:4]) == 1.)
+            constraint.evaluator().set_description(f"unit quaternion constraint[{k}]")
+            self.unit_quaternion_constraints.append(constraint)
+
+    def check_unit_quaternion_constraints(self, q):
+        return check_constraints(self.unit_quaternion_constraints, {
+            "q": q
+        })
+
     def check_all_constraints(self, q, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
         return (self.check_eq7a_constraints(F, rdd)
                 and self.check_eq7b_constraints(F, c, tau, hd, r)
@@ -814,6 +877,9 @@ class HumanoidPlanner:
                 and self.check_eq7h_constraints(q, v, r))
 
     def create_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
+        self.q_init = q_init
+        self.q_final = q_final
+        self.pelvis_only = pelvis_only
         self.N = num_knot_points
         self.T = max_time
 
@@ -858,6 +924,13 @@ class HumanoidPlanner:
         self.add_eq7f_constraints()
         self.add_eq7g_constraints()
         self.add_eq7h_constraints()
+        self.add_eq7i_constraints()
+        self.add_eq7j_constraints()
+        self.add_eq7k_admissable_posture_constraints()
+        self.add_eq7k_joint_velocity_constraints()
+        self.add_eq7k_friction_cone_constraints()
+        self.add_eq7k_beta_positive_constraints()
+        self.add_eq7k_torque_constraints()
         if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
             self.add_eq8a_constraints()
             self.add_eq8b_constraints()
@@ -875,99 +948,63 @@ class HumanoidPlanner:
                     + rdd[k].dot(rdd[k])))
 
         ''' Additional constraints not explicitly stated '''
-        ''' Constrain initial pose '''
-        (self.prog.AddLinearConstraint(eq(q[0], q_init))
-                .evaluator().set_description("initial pose"))
-        ''' Constrain initial velocity '''
-        (self.prog.AddLinearConstraint(eq(v[0], 0.0))
-                .evaluator().set_description("initial velocity"))
-        ''' Constrain final pose '''
-        if pelvis_only:
-            (self.prog.AddLinearConstraint(eq(q[-1, 0:7], q_final[0:7]))
-                    .evaluator().set_description("final pose"))
-        else:
-            (self.prog.AddLinearConstraint(eq(q[-1], q_final))
-                    .evaluator().set_description("final pose"))
-        ''' Constrain final velocity '''
-        (self.prog.AddLinearConstraint(eq(v[-1], 0.0))
-                .evaluator().set_description("final velocity"))
-        ''' Constrain final COM velocity '''
-        (self.prog.AddLinearConstraint(eq(rd[-1], 0.0))
-                .evaluator().set_description("final COM velocity"))
-        ''' Constrain final COM acceleration '''
-        (self.prog.AddLinearConstraint(eq(rdd[-1], 0.0))
-                .evaluator().set_description("final COM acceleration"))
-        ''' Constrain time taken '''
-        (self.prog.AddLinearConstraint(np.sum(dt) <= self.T)
-                .evaluator().set_description("max time"))
-        ''' Constrain first time step '''
-        # Note that the first time step is only used in the initial cost calculation
-        # and not in the backwards Euler
-        (self.prog.AddLinearConstraint(dt[0] == 0)
-                .evaluator().set_description("first timestep"))
-        ''' Constrain remaining time step '''
-        # Values taken from
-        # https://colab.research.google.com/github/RussTedrake/underactuated/blob/master/exercises/simple_legs/compass_gait_limit_cycle/compass_gait_limit_cycle.ipynb
-        (self.prog.AddLinearConstraint(ge(dt[1:], [0.005]*(self.N-1)))
-                .evaluator().set_description("min timestep"))
-        (self.prog.AddLinearConstraint(le(dt, [0.05]*self.N))
-                .evaluator().set_description("max timestep"))
-        ''' Constrain max joint acceleration '''
-        for k in range(1, self.N):
-            (self.prog.AddLinearConstraint(ge((v[k] - v[k-1]), -MAX_JOINT_ACCELERATION*dt[k]))
-                    .evaluator().set_description(f"min joint acceleration[{k}]"))
-            (self.prog.AddLinearConstraint(le((v[k] - v[k-1]), MAX_JOINT_ACCELERATION*dt[k]))
-                    .evaluator().set_description(f"max joint acceleration[{k}]"))
-        ''' Constrain unit quaternion '''
-        for k in range(self.N):
-            (self.prog.AddConstraint(np.linalg.norm(q[k][0:4]) == 1.)
-                    .evaluator().set_description(f"unit quaternion constraint[{k}]"))
+        self.add_initial_pose_constraints()
+        self.add_initial_velocity_constraints()
+        self.add_final_pose_constraints()
+        self.add_final_velocity_constraints()
+        self.add_final_COM_velocity_constraints()
+        self.add_final_COM_acceleration_constraints()
+        self.add_max_time_constraints()
+        self.add_timestep_constraints()
+        self.add_joint_acceleration_constraints()
+        self.add_unit_quaternion_constraints()
+
         '''
         Constrain unbounded variables to improve IPOPT performance
         because IPOPT is an interior point method which works poorly for unbounded variables
         '''
-        (self.prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
-                .evaluator().set_description("max F"))
-        (self.prog.AddBoundingBoxConstraint(-1e3, 1e3, tau)
-                .evaluator().set_description("bound tau"))
-        (self.prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
-                .evaluator().set_description("max beta"))
+        # (self.prog.AddLinearConstraint(le(F.flatten(), np.ones(F.shape).flatten()*1e3))
+                # .evaluator().set_description("max F"))
+        # (self.prog.AddBoundingBoxConstraint(-1e3, 1e3, tau)
+                # .evaluator().set_description("bound tau"))
+        # (self.prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
+                # .evaluator().set_description("max beta"))
 
     def solve(self):
         ''' Solve '''
         initial_guess = np.empty(self.prog.num_vars())
-        dt_guess = [0.0] + [self.T/(self.N-1)] * (N-1)
-        self.prog.SetDecisionVariableValueInVector(dt, dt_guess, initial_guess)
+        dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
+        self.prog.SetDecisionVariableValueInVector(self.dt, dt_guess, initial_guess)
         # Guess q to avoid initializing with invalid quaternion
         quat_traj_guess = PiecewiseQuaternionSlerp()
-        quat_traj_guess.Append(0, Quaternion(q_init[0:4]))
-        quat_traj_guess.Append(self.T, Quaternion(q_final[0:4]))
-        position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([q_init[4:], q_final[4:]]).T)
+        quat_traj_guess.Append(0, Quaternion(self.q_init[0:4]))
+        quat_traj_guess.Append(self.T, Quaternion(self.q_final[0:4]))
+        position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([self.q_init[4:], self.q_final[4:]]).T)
         q_guess = np.array([np.hstack([
             Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
-        self.prog.SetDecisionVariableValueInVector(q, q_guess, initial_guess)
+        self.prog.SetDecisionVariableValueInVector(self.q, q_guess, initial_guess)
 
         v_traj_guess = position_traj_guess.MakeDerivative()
         w_traj_guess = quat_traj_guess.MakeDerivative()
         v_guess = np.array([
             np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
-        self.prog.SetDecisionVariableValueInVector(v, v_guess, initial_guess)
+        self.prog.SetDecisionVariableValueInVector(self.v, v_guess, initial_guess)
 
         c_guess = np.array([
             self.get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(self.N)])
         for i in range(self.N):
             assert((self.eq7i(np.concatenate([q_guess[i], v_guess[i], c_guess[i]])) == 0.0).all())
-        self.prog.SetDecisionVariableValueInVector(c, c_guess, initial_guess)
+        self.prog.SetDecisionVariableValueInVector(self.c, c_guess, initial_guess)
 
         r_guess = np.array([
             self.calc_r(q_guess[i], v_guess[i]) for i in range(self.N)])
-        self.prog.SetDecisionVariableValueInVector(r, r_guess, initial_guess)
+        self.prog.SetDecisionVariableValueInVector(self.r, r_guess, initial_guess)
 
         h_guess = np.array([
             self.calc_h(q_guess[i], v_guess[i]) for i in range(self.N)])
-        self.prog.SetDecisionVariableValueInVector(h, h_guess, initial_guess)
+        self.prog.SetDecisionVariableValueInVector(self.h, h_guess, initial_guess)
 
         solver = SnoptSolver()
         options = SolverOptions()
@@ -978,18 +1015,18 @@ class HumanoidPlanner:
         print(f"Start solving...")
         result = solver.Solve(self.prog, initial_guess, options) # Currently takes around 30 mins
         print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()} Success: {result.is_success()}")
-        self.q_sol = result.GetSolution(q)
-        self.v_sol = result.GetSolution(v)
-        self.dt_sol = result.GetSolution(dt)
-        self.r_sol = result.GetSolution(r)
-        self.rd_sol = result.GetSolution(rd)
-        self.rdd_sol = result.GetSolution(rdd)
-        self.c_sol = result.GetSolution(c)
-        self.F_sol = result.GetSolution(F)
-        self.tau_sol = result.GetSolution(tau)
-        self.h_sol = result.GetSolution(h)
-        self.hd_sol = result.GetSolution(hd)
-        self.beta_sol = result.GetSolution(beta)
+        self.q_sol = result.GetSolution(self.q)
+        self.v_sol = result.GetSolution(self.v)
+        self.dt_sol = result.GetSolution(self.dt)
+        self.r_sol = result.GetSolution(self.r)
+        self.rd_sol = result.GetSolution(self.rd)
+        self.rdd_sol = result.GetSolution(self.rdd)
+        self.c_sol = result.GetSolution(self.c)
+        self.F_sol = result.GetSolution(self.F)
+        self.tau_sol = result.GetSolution(self.tau)
+        self.h_sol = result.GetSolution(self.h)
+        self.hd_sol = result.GetSolution(self.hd)
+        self.beta_sol = result.GetSolution(self.beta)
         if not result.is_success():
             print(result.GetInfeasibleConstraintNames(self.prog))
             pdb.set_trace()
