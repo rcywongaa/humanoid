@@ -74,22 +74,17 @@ def create_r_interpolation(r_traj, rd_traj, rdd_traj, dt_traj):
     rdd_poly = rd_poly.derivative()
     return r_poly, rd_poly, rdd_poly
 
-def apply_angular_velocity_to_quaternion(q, w, t):
-    # This currently returns a runtime warning of division by zero
-    # https://github.com/RobotLocomotion/drake/issues/10451
-    norm_w = np.linalg.norm(w)
-    if norm_w <= epsilon:
-        return q
-    norm_q = np.linalg.norm(q)
-    if abs(norm_q - 1.0) > quaternion_epsilon:
-        print(f"WARNING: Quaternion {q} with norm {norm_q} not normalized!")
-    a = w / norm_w
-    if q.dtype == AutoDiffXd:
-        delta_q = Quaternion_[AutoDiffXd](np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
-        return Quaternion_[AutoDiffXd](q/norm_q).multiply(delta_q).wxyz()
-    else:
-        delta_q = Quaternion(np.hstack([np.cos(norm_w * t/2.0), a*np.sin(norm_w * t/2.0)]).reshape((4,1)))
-        return Quaternion(q/norm_q).multiply(delta_q).wxyz()
+def quat_multiply(q0, q1):
+    w0, x0, y0, z0 = q0
+    w1, x1, y1, z1 = q1
+    return np.array([-x1*x0 - y1*y0 - z1*z0 + w1*w0,
+                   x1*w0 + y1*z0 - z1*y0 + w1*x0,
+                  -x1*z0 + y1*w0 + z1*x0 + w1*y0,
+                   x1*y0 - y1*x0 + z1*w0 + w1*z0], dtype=q0.dtype)
+
+def apply_angular_velocity_to_quaternion(q, w_axis, w_mag, t):
+    delta_q = np.hstack([np.cos(w_mag* t/2.0), w_axis*np.sin(w_mag* t/2.0)])
+    return  quat_multiply(q, delta_q)
 
 def get_index_of_variable(variables, variable_name):
     return [str(element) for element in variables].index(variable_name)
@@ -222,11 +217,13 @@ class HumanoidPlanner:
             self.plant_float.num_positions() + self.plant_float.num_velocities()])
         return self.calc_h(q, v) - h
 
-    def eq7d(self, q_qprev_v_dt):
-        q, qprev, v, dt = np.split(q_qprev_v_dt, [
+    def eq7d(self, q_qprev_waxis_wmag_v_dt):
+        q, qprev, w_axis, w_mag, v, dt = np.split(q_qprev_waxis_wmag_v_dt, [
             self.plant_float.num_positions(),
             self.plant_float.num_positions() + self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_positions() + self.plant_float.num_velocities()])
+            self.plant_float.num_positions() + self.plant_float.num_positions() + 3,
+            self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1,
+            self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1 + self.plant_float.num_velocities()])
         plant, context = self.getPlantAndContext(q, v)
         qd = plant.MapVelocityToQDot(context, v*dt[0])
         # return q - qprev - qd
@@ -234,7 +231,7 @@ class HumanoidPlanner:
         As advised in
         https://stackoverflow.com/a/63510131/3177701
         '''
-        ret_quat = q[0:4] - apply_angular_velocity_to_quaternion(qprev[0:4], v[0:3], dt[0])
+        ret_quat = q[0:4] - apply_angular_velocity_to_quaternion(qprev[0:4], w_axis, w_mag, dt[0])
         ret_linear = (q - qprev - qd)[4:]
         ret = np.hstack([ret_quat, ret_linear])
         return ret
@@ -362,6 +359,8 @@ class HumanoidPlanner:
 
     def add_eq7d_constraints(self):
         q = self.q
+        w_axis = self.w_axis
+        w_mag = self.w_mag
         v = self.v
         dt = self.dt
         self.eq7d_constraints = []
@@ -370,7 +369,7 @@ class HumanoidPlanner:
             constraint = self.prog.AddConstraint(self.eq7d,
                     lb=[0.0]*self.plant_float.num_positions(),
                     ub=[0.0]*self.plant_float.num_positions(),
-                    vars=np.concatenate([q[k], q[k-1], v[k], [dt[k]]]))
+                    vars=np.concatenate([q[k], q[k-1], w_axis[k], w_mag[k], v[k], dt[k]]))
             constraint.evaluator().set_description(f"Eq(7d)[{k}]")
 
             # Deprecated
@@ -819,16 +818,16 @@ class HumanoidPlanner:
 
         # Note that the first time step is only used in the initial cost calculation
         # and not in the backwards Euler
-        constraint = self.prog.AddLinearConstraint(dt[0] == 0)
+        constraint = self.prog.AddLinearConstraint(eq(dt[0], 0.0))
         constraint.evaluator().set_description("first timestep")
         self.timestep_constraints.append(constraint)
 
         # Values taken from
         # https://colab.research.google.com/github/RussTedrake/underactuated/blob/master/exercises/simple_legs/compass_gait_limit_cycle/compass_gait_limit_cycle.ipynb
-        constraint = self.prog.AddLinearConstraint(ge(dt[1:], [0.005]*(self.N-1)))
+        constraint = self.prog.AddLinearConstraint(ge(dt[1:], [[0.005]]*(self.N-1)))
         constraint.evaluator().set_description("min timestep")
         self.timestep_constraints.append(constraint)
-        constraint = self.prog.AddLinearConstraint(le(dt, [0.05]*self.N))
+        constraint = self.prog.AddLinearConstraint(le(dt, [[0.05]]*self.N))
         constraint.evaluator().set_description("max timestep")
         self.timestep_constraints.append(constraint)
 
@@ -869,6 +868,23 @@ class HumanoidPlanner:
             "q": q
         })
 
+    def add_angular_velocity_constraints(self):
+        v = self.v
+        w_axis = self.w_axis
+        w_mag = self.w_mag
+        self.angular_velocity_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddConstraint(eq(v[k][0:3], w_axis[k] * w_mag[k]))
+            constraint.evaluator().set_description(f"angular velocity constraint[{k}]")
+            self.angular_velocity_constraints.append(constraint)
+
+    def check_angular_velocity_constraints(self, v, w_axis, w_mag):
+        return check_constraints(self.angular_velocity_constraints, {
+            "v": v,
+            "w_axis": w_axis,
+            "w_mag": w_mag
+        })
+
     def check_all_constraints(self, q, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
         return (self.check_eq7a_constraints(F, rdd)
                 and self.check_eq7b_constraints(F, c, tau, hd, r)
@@ -885,8 +901,11 @@ class HumanoidPlanner:
 
         self.prog = MathematicalProgram()
         self.q = self.prog.NewContinuousVariables(rows=self.N, cols=self.plant_float.num_positions(), name="q")
+        # Special variables for handling floating base angular velocity
+        self.w_axis = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="w_axis")
+        self.w_mag = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="w_mag")
         self.v = self.prog.NewContinuousVariables(rows=self.N, cols=self.plant_float.num_velocities(), name="v")
-        self.dt = self.prog.NewContinuousVariables(self.N, name="dt")
+        self.dt = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="dt")
         self.r = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="r")
         self.rd = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="rd")
         self.rdd = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="rdd")
@@ -942,10 +961,10 @@ class HumanoidPlanner:
         ''' Eq(10) '''
         for k in range(self.N):
             Q_v = 0.5 * np.identity(self.plant_float.num_velocities())
-            self.prog.AddCost(self.pose_error_cost, vars=np.concatenate([q[k], v[k], [dt[k]]])) # np.concatenate requires items to have compatible shape
-            self.prog.AddCost(dt[k]*(
+            self.prog.AddCost(self.pose_error_cost, vars=np.concatenate([q[k], v[k], dt[k]])) # np.concatenate requires items to have compatible shape
+            self.prog.AddCost((dt[k]*(
                     + v[k].dot(Q_v).dot(v[k])
-                    + rdd[k].dot(rdd[k])))
+                    + rdd[k].dot(rdd[k])))[0])
 
         ''' Additional constraints not explicitly stated '''
         self.add_initial_pose_constraints()
@@ -958,6 +977,7 @@ class HumanoidPlanner:
         self.add_timestep_constraints()
         self.add_joint_acceleration_constraints()
         self.add_unit_quaternion_constraints()
+        self.add_angular_velocity_constraints()
 
         '''
         Constrain unbounded variables to improve IPOPT performance
