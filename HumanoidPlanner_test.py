@@ -1,7 +1,7 @@
 from HumanoidPlanner import HumanoidPlanner
 from HumanoidPlanner import create_q_interpolation, create_r_interpolation, apply_angular_velocity_to_quaternion
 from HumanoidPlanner import create_constraint_input_array
-from pydrake.all import MathematicalProgram, le, ge
+from pydrake.all import MathematicalProgram, le, ge, eq
 import numpy as np
 from Atlas import Atlas, load_atlas, set_atlas_initial_pose
 import unittest
@@ -20,17 +20,17 @@ def assert_autodiff_array_almost_equal(autodiff_array, float_array):
     float_array = np.array([i.value() for i in autodiff_array])
     np.testing.assert_array_almost_equal(float_array, float_array)
 
-def default_q():
+def default_q(N = 1):
     pelvis_orientation = [1., 0., 0., 0.]
     pelvis_position = [0., 0., 0.93845] # Feet just touching ground
     joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
-    return np.array(pelvis_orientation + pelvis_position + joint_positions)
+    return np.array([pelvis_orientation + pelvis_position + joint_positions]*N)
 
-def default_v():
+def default_v(N = 1):
     pelvis_rotational_velocity = [0., 0., 0.]
     pelvis_linear_velocity = [0., 0., 0.]
     joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
-    return np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
+    return np.array([pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity] * N)
 
 class TestHumanoidPlannerStandalone(unittest.TestCase):
     def test_create_q_interpolation(self):
@@ -44,16 +44,16 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
 
     def test_apply_angular_velocity_to_quaternion_float(self):
         q = np.array([1., 0., 0., 0.])
-        t = 1.0
+        t = np.array([1.0])
         w_axis = np.array([1., 0., 0.])
-        w_mag = 1.0
+        w_mag = np.array([1.0])
         q_new = apply_angular_velocity_to_quaternion(q, w_axis, w_mag, t)
         q_new_expected = np.array([0.877583, 0.479425, 0.0, 0.0])
         np.testing.assert_array_almost_equal(q_new, q_new_expected)
 
         w_axis = np.array([0., 1., 0.])
-        w_mag = 2.0
-        t = 0.5
+        w_mag = np.array([2.0])
+        t = np.array([0.5])
         q_new = apply_angular_velocity_to_quaternion(q, w_axis, w_mag, t)
         q_new_expected = np.array([0.877583, 0.0, 0.479425, 0.0])
         np.testing.assert_array_almost_equal(q_new, q_new_expected)
@@ -65,7 +65,7 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
         q_new_expected = np.array([0.877583, 0.0, 0.0, 0.479425])
         np.testing.assert_array_almost_equal(q_new, q_new_expected)
 
-        w_axis = np.array([0.26726124191242438468., 0.53452248382484876937, 0.80178372573727315405])
+        w_axis = np.array([0.26726124191242438468, 0.53452248382484876937, 0.80178372573727315405])
         w_mag = 3.74165738677394138558
         t = 1.0
         q_new = apply_angular_velocity_to_quaternion(q, w_axis, w_mag, t)
@@ -86,19 +86,30 @@ class TestHumanoidPlannerStandalone(unittest.TestCase):
         constraint = prog.AddConstraint(le(q, r[0,0] + 2*r[1,1]))
         input_array = create_constraint_input_array(constraint, {
             "q": q_val,
-            "r": r_val})
+            "r": r_val
+        })
         expected_input_array = [0.5, 0, 4]
         np.testing.assert_array_almost_equal(input_array, expected_input_array)
 
         z = prog.NewContinuousVariables(2, 'z')
         z_val = np.array([0.0, 0.5])
-        # https://stackoverflow.com/zuestions/64736910/using-le-or-ge-with-scalar-left-hand-side-creates-unsized-formula-array
+        # https://stackoverflow.com/questions/64736910/using-le-or-ge-with-scalar-left-hand-side-creates-unsized-formula-array
         # constraint = prog.AddConstraint(le(z[1], r[0,2] + 2*r[1,0]))
         constraint = prog.AddConstraint(le([z[1]], r[0,2] + 2*r[1,0]))
         input_array = create_constraint_input_array(constraint, {
             "z": z_val,
-            "r": r_val})
+            "r": r_val
+        })
         expected_input_array = [3, 2, 0.5]
+        np.testing.assert_array_almost_equal(input_array, expected_input_array)
+
+        a = prog.NewContinuousVariables(rows=2, cols=1, name='a')
+        a_val = np.array([[1.0], [2.0]])
+        constraint = prog.AddConstraint(eq(a[0], a[1]))
+        input_array = create_constraint_input_array(constraint, {
+            "a": a_val
+        })
+        expected_input_array = [1.0, 2.0]
         np.testing.assert_array_almost_equal(input_array, expected_input_array)
 
 class TestHumanoidPlanner(unittest.TestCase):
@@ -108,8 +119,18 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.context = self.plant.CreateDefaultContext()
         upright_context = self.plant.CreateDefaultContext()
         set_atlas_initial_pose(self.plant, upright_context)
-        q_nom = self.plant.GetPositions(upright_context)
-        self.planner = HumanoidPlanner(self.plant, Atlas.CONTACTS_PER_FRAME, q_nom)
+        self.q_nom = self.plant.GetPositions(upright_context)
+        self.planner = HumanoidPlanner(self.plant, Atlas.CONTACTS_PER_FRAME, self.q_nom)
+
+    def create_default_program(self, N=2):
+        q_init = self.q_nom.copy()
+        q_init[6] = 0.94 # Avoid initializing with ground penetration
+        q_final = q_init.copy()
+        q_final[4] = 0.0 # x position of pelvis
+        q_final[6] = 0.93 # z position of pelvis (to make sure final pose touches ground)
+        num_knot_points = N
+        max_time = 0.02
+        self.planner.create_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
 
     def test_getPlantAndContext_float(self):
         pelvis_orientation = [1., 0., 0., 0.]
@@ -169,12 +190,13 @@ class TestHumanoidPlanner(unittest.TestCase):
     def test_calc_r(self):
         pass
 
-    def test_eq7c(self):
-        q = default_q()
-        v = default_v()
-        h = np.array([0., 0., 0.])
-        q_v_h = np.concatenate([q, v, h])
-        np.testing.assert_allclose(self.planner.eq7c(q_v_h), 0.)
+    def test_eq7c_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        q = default_q(N)
+        v = default_v(N)
+        h = np.array([[0., 0., 0.]]*N)
+        self.assertTrue(self.planner.check_eq7c_constraints(q, v, h))
 
     def test_eq7d(self):
         q = default_q()
@@ -226,8 +248,11 @@ class TestHumanoidPlanner(unittest.TestCase):
         contact_dim = 3*16
         N_d = 4
         q = np.zeros((N, self.plant.num_positions()))
+        w_axis = np.zeros((N, 3))
+        w_axis[:, 2] = 1.0
+        w_mag = np.zeros((N, 1))
         v = np.zeros((N, self.plant.num_velocities()))
-        dt = t/N*np.ones(N)
+        dt = t/N*np.ones((N, 1))
         r = np.zeros((N, 3))
         rd = np.zeros((N, 3))
         rdd = np.zeros((N, 3))
@@ -247,23 +272,9 @@ class TestHumanoidPlanner(unittest.TestCase):
             # c[i] = 
             F[i] = np.array([0., 0., Atlas.M*g / 16] * 16)
 
-        upright_context = self.plant.CreateDefaultContext()
-        set_atlas_initial_pose(self.plant, upright_context)
-        q_nom = self.plant.GetPositions(upright_context)
-        q_init = q_nom.copy()
-        q_init[6] = 0.94 # Avoid initializing with ground penetration
-        q_final = q_init.copy()
-        q_final[4] = 0.0 # x position of pelvis
-        q_final[6] = 0.9 # z position of pelvis (to make sure final pose touches ground)
-
-        num_knot_points = N
-        max_time = 0.09
-        assert(max_time / num_knot_points > 0.005)
-        assert(max_time / num_knot_points < 0.05)
-
-        self.planner.create_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
+        self.create_default_program()
         ''' Test all constraints satisfied '''
-        self.assertTrue(self.planner.check_all_constraints(q, v, dt, r, rd, rdd, c, F, tau, h, hd, beta))
+        self.assertTrue(self.planner.check_all_constraints(q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta))
 
 if __name__ == "__main__":
     unittest.main()

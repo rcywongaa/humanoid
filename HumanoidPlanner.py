@@ -35,6 +35,8 @@ ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
 MAX_GROUND_PENETRATION = 0.0
 MAX_JOINT_ACCELERATION = 20.0
 g = np.array([0, 0, -Atlas.g])
+MIN_TIMESTEP = 0.005
+MAX_TIMESTEP = 0.05
 '''
 Slack for the complementary constraints
 Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
@@ -96,6 +98,9 @@ def create_constraint_input_array(constraint, name_value_map):
     ret.fill(np.nan)
     for name, value in name_value_map.items():
         if isinstance(value, Iterable):
+            # pydrake treats 2D arrays with 1 col / 1 row as 1D array
+            if any(np.array(value.shape) == 1):
+                value = value.flatten()
             # Expand vectors into individual entries
             it = np.nditer(value, flags=['multi_index', 'refs_ok'])
             while not it.finished:
@@ -119,7 +124,9 @@ def create_constraint_input_array(constraint, name_value_map):
         except ValueError:
             pass
     # Make sure all values are filled
-    assert(not np.isnan(ret).any())
+    nan_idx = np.argwhere(np.isnan(ret))
+    if nan_idx.size != 0:
+        raise Exception(f"{constraint.variables()[nan_idx[0,0]]} missing!")
     return ret
 
 def check_constraint(constraint, input_map):
@@ -129,6 +136,14 @@ def check_constraint(constraint, input_map):
     else:
         print(f"{constraint.evaluator().get_description()} violated!")
         return False
+
+def flatten(container):
+    for i in container:
+        if isinstance(i, (list,tuple)):
+            for j in flatten(i):
+                yield j
+        else:
+            yield i
 
 def check_constraints(constraints, input_map):
     for constraint in flatten(constraints):
@@ -352,9 +367,9 @@ class HumanoidPlanner:
 
     def check_eq7c_constraints(self, q, v, h):
         return check_constraints(self.eq7c_constraints, {
-            "q", q,
-            "v", v,
-            "h", h
+            "q": q,
+            "v": v,
+            "h": h
         })
 
     def add_eq7d_constraints(self):
@@ -394,9 +409,11 @@ class HumanoidPlanner:
             # self.prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
             self.eq7d_constraints.append(constraint)
 
-    def check_eq7d_constraints(self, q, v, dt):
+    def check_eq7d_constraints(self, q, w_axis, w_mag, v, dt):
         return check_constraints(self.eq7d_constraints, {
             "q": q,
+            "w_axis": w_axis,
+            "w_mag": w_mag,
             "v": v,
             "dt": dt
         })
@@ -824,10 +841,10 @@ class HumanoidPlanner:
 
         # Values taken from
         # https://colab.research.google.com/github/RussTedrake/underactuated/blob/master/exercises/simple_legs/compass_gait_limit_cycle/compass_gait_limit_cycle.ipynb
-        constraint = self.prog.AddLinearConstraint(ge(dt[1:], [[0.005]]*(self.N-1)))
+        constraint = self.prog.AddLinearConstraint(ge(dt[1:], [[MIN_TIMESTEP]]*(self.N-1)))
         constraint.evaluator().set_description("min timestep")
         self.timestep_constraints.append(constraint)
-        constraint = self.prog.AddLinearConstraint(le(dt, [[0.05]]*self.N))
+        constraint = self.prog.AddLinearConstraint(le(dt, [[MAX_TIMESTEP]]*self.N))
         constraint.evaluator().set_description("max timestep")
         self.timestep_constraints.append(constraint)
 
@@ -885,14 +902,55 @@ class HumanoidPlanner:
             "w_mag": w_mag
         })
 
-    def check_all_constraints(self, q, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
+    def check_all_constraints(self, q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
         return (self.check_eq7a_constraints(F, rdd)
                 and self.check_eq7b_constraints(F, c, tau, hd, r)
                 and self.check_eq7c_constraints(q, v, h)
-                and self.check_eq7d_constraints(q, v, dt)
-                and self.check_eq7h_constraints(q, v, r))
+                and self.check_eq7d_constraints(q, w_axis, w_mag, v, dt)
+                and self.check_eq7e_constraints(h, hd, dt)
+                and self.check_eq7f_constraints(r, rd, dt)
+                and self.check_eq7g_constraints(rd, rdd, dt)
+                and self.check_eq7h_constraints(q, v, r)
+                and self.check_eq7i_constraints(q, v, c)
+                and self.check_eq7j_constraints(c)
+                and self.check_eq7k_admissable_posture_constraints(q)
+                and self.check_eq7k_joint_velocity_constraints(v)
+                and self.check_eq7k_friction_cone_constraints(F, beta)
+                and self.check_eq7k_beta_positive_constraints(beta)
+                and self.check_eq7k_torque_constraints(tau, beta)
+                and self.check_eq8a_constraints(q, v, F)
+                and self.check_eq8b_constraints(q, v, tau)
+                and self.check_eq8c_contact_force_constraints(F)
+                and self.check_eq8c_contact_distance_constraint(q, v)
+                and self.check_eq9a_constraints(F, c)
+                and self.check_eq9b_constraints(F, c)
+                and self.check_initial_pose_constraints(q)
+                and self.check_initial_velocity_constraints(v)
+                and self.check_final_pose_constraints(q)
+                and self.check_final_velocity_constraints(v)
+                and self.check_final_COM_velocity_constraints(rd)
+                and self.check_final_COM_acceleration_constraints(rdd)
+                and self.check_max_time_constraints(dt)
+                and self.check_timestep_constraints(dt)
+                and self.check_joint_acceleration_constraints(v, dt)
+                and self.check_unit_quaternion_constraints(q)
+                and self.check_angular_velocity_constraints(v, w_axis, w_mag))
+
+    def add_eq10_cost(self):
+        q = self.q
+        v = self.v
+        dt = self.dt
+        rdd = self.rdd
+        for k in range(self.N):
+            Q_v = 0.5 * np.identity(self.plant_float.num_velocities())
+            self.prog.AddCost(self.pose_error_cost, vars=np.concatenate([q[k], v[k], dt[k]])) # np.concatenate requires items to have compatible shape
+            self.prog.AddCost((dt[k]*(
+                    + v[k].dot(Q_v).dot(v[k])
+                    + rdd[k].dot(rdd[k])))[0])
 
     def create_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
+        assert(max_time / num_knot_points > MIN_TIMESTEP)
+        assert(max_time / num_knot_points < MAX_TIMESTEP)
         self.q_init = q_init
         self.q_final = q_final
         self.pelvis_only = pelvis_only
@@ -921,20 +979,6 @@ class HumanoidPlanner:
         # Friction cone scale
         self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
-        ''' Rename variables for easier typing... '''
-        q = self.q
-        v = self.v
-        dt = self.dt
-        r = self.r
-        rd = self.rd
-        rdd = self.rdd
-        c = self.c
-        F = self.F
-        tau = self.tau
-        h = self.h
-        hd = self.hd
-        beta = self.beta
-
         self.add_eq7a_constraints()
         self.add_eq7b_constraints()
         self.add_eq7c_constraints()
@@ -958,13 +1002,7 @@ class HumanoidPlanner:
             self.add_eq9a_constraints()
             self.add_eq9b_constraints()
 
-        ''' Eq(10) '''
-        for k in range(self.N):
-            Q_v = 0.5 * np.identity(self.plant_float.num_velocities())
-            self.prog.AddCost(self.pose_error_cost, vars=np.concatenate([q[k], v[k], dt[k]])) # np.concatenate requires items to have compatible shape
-            self.prog.AddCost((dt[k]*(
-                    + v[k].dot(Q_v).dot(v[k])
-                    + rdd[k].dot(rdd[k])))[0])
+        self.add_eq10_cost()
 
         ''' Additional constraints not explicitly stated '''
         self.add_initial_pose_constraints()
@@ -1071,8 +1109,6 @@ def main():
 
     num_knot_points = 40
     max_time = 1.0
-    assert(max_time / num_knot_points > 0.005)
-    assert(max_time / num_knot_points < 0.05)
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
