@@ -3,7 +3,7 @@ from HumanoidPlanner import create_q_interpolation, create_r_interpolation, appl
 from HumanoidPlanner import create_constraint_input_array
 from pydrake.all import MathematicalProgram, le, ge, eq
 import numpy as np
-from Atlas import Atlas, load_atlas, set_atlas_initial_pose
+from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getActuatorIndex
 import unittest
 import pdb
 
@@ -20,27 +20,33 @@ def assert_autodiff_array_almost_equal(autodiff_array, float_array):
     float_array = np.array([i.value() for i in autodiff_array])
     np.testing.assert_array_almost_equal(float_array, float_array)
 
-def default_q(N = 1):
+def default_q(N = 0):
     pelvis_orientation = [1., 0., 0., 0.]
     pelvis_position = [0., 0., 0.93845] # Feet just touching ground
     joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
-    return np.array([pelvis_orientation + pelvis_position + joint_positions]*N)
+    if N == 0:
+        return np.array(pelvis_orientation + pelvis_position + joint_positions)
+    else:
+        return np.array([pelvis_orientation + pelvis_position + joint_positions]*N)
 
-def default_v(N = 1):
+def default_v(N = 0):
     pelvis_rotational_velocity = [0., 0., 0.]
     pelvis_linear_velocity = [0., 0., 0.]
     joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
-    return np.array([pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity] * N)
+    if N == 0:
+        return np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
+    else:
+        return np.array([pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity] * N)
 
 class TestHumanoidPlannerStandalone(unittest.TestCase):
     def test_create_q_interpolation(self):
         plant = MultibodyPlant(mbp_time_step)
         load_atlas(plant, add_ground=False)
         context = plant.CreateDefaultContext()
-        pass
+        self.skipTest("Unimplemented")
 
     def test_create_r_interpolation(self):
-        pass
+        self.skipTest("Unimplemented")
 
     def test_apply_angular_velocity_to_quaternion_float(self):
         q = np.array([1., 0., 0., 0.])
@@ -122,6 +128,10 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.q_nom = self.plant.GetPositions(upright_context)
         self.planner = HumanoidPlanner(self.plant, Atlas.CONTACTS_PER_FRAME, self.q_nom)
 
+        self.num_contacts = 16
+        self.contact_dim = 3*16
+        self.N_d = 4
+
     def create_default_program(self, N=2):
         q_init = self.q_nom.copy()
         q_init[6] = 0.94 # Avoid initializing with ground penetration
@@ -169,7 +179,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         np.testing.assert_array_almost_equal(tau_j, tau_j_expected)
 
     def test_get_contact_position(self):
-        pass
+        self.skipTest("Unimplemented")
 
     def test_get_contact_positions_z(self):
         pelvis_orientation = [1., 0., 0., 0.]
@@ -184,11 +194,30 @@ class TestHumanoidPlanner(unittest.TestCase):
         expected_contact_positions_z = [0.] * Atlas.NUM_CONTACTS
         np.testing.assert_allclose(contact_positions_z, expected_contact_positions_z, atol=epsilon)
 
-    def test_calc_h(self):
-        pass
+    def test_eq7a_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        F = np.zeros((N, self.contact_dim))
+        rdd = np.zeros((N, 3))
+        rdd[0][2] = -g
+        rdd[1][2] = -g
+        self.assertTrue(self.planner.check_eq7a_constraints(F, rdd))
 
-    def test_calc_r(self):
-        pass
+        F[0][2::3] = [Atlas.M*g/self.num_contacts]*self.num_contacts
+        F[1][2::3] = [Atlas.M*g/self.num_contacts]*self.num_contacts
+        rdd[0][2] = 0.0
+        rdd[1][2] = 0.0
+        self.assertTrue(self.planner.check_eq7a_constraints(F, rdd))
+
+    def test_eq7b_constraints(self):
+        self.skipTest("Unimplemented")
+
+    def test_eq7c(self):
+        q = default_q()
+        v = default_v()
+        h = np.array([0., 0., 0.])
+        q_v_h = np.concatenate([q, v, h])
+        np.testing.assert_allclose(self.planner.eq7c(q_v_h), 0.)
 
     def test_eq7c_constraints(self):
         N = 2
@@ -201,11 +230,15 @@ class TestHumanoidPlanner(unittest.TestCase):
     def test_eq7d(self):
         q = default_q()
         qprev = default_q()
+        w_axis = [0., 0., 1.]
+        w_mag = [0.0]
         v = default_v()
         dt = [0.5]
-        q_qprev_v_dt = np.concatenate([q, qprev, v, dt])
-        np.testing.assert_allclose(self.planner.eq7d(q_qprev_v_dt), 0.)
+        q_qprev_waxis_wmag_v_dt = np.concatenate([q, qprev, w_axis, w_mag, v, dt])
+        np.testing.assert_allclose(self.planner.eq7d(q_qprev_waxis_wmag_v_dt), 0.)
 
+        w_axis = [0.26726124191242438468, 0.53452248382484876937, 0.80178372573727315405]
+        w_mag = [3.74165738677394138558]
         pelvis_rotational_velocity = [1., 2., 3.]
         pelvis_linear_velocity = [1., 2., 3.]
         joint_velocity = [i for i in range(Atlas.NUM_ACTUATED_DOF)]
@@ -214,39 +247,201 @@ class TestHumanoidPlanner(unittest.TestCase):
         pelvis_position = [0.5, 1., 1.5+0.93845]
         joint_positions = [i*0.5 for i in range(Atlas.NUM_ACTUATED_DOF)]
         q = np.array(pelvis_orientation + pelvis_position + joint_positions)
-        q_qprev_v_dt = np.concatenate([q, qprev, v, dt])
-        np.testing.assert_allclose(self.planner.eq7d(q_qprev_v_dt), 0., atol=epsilon)
+        q_qprev_waxis_wmag_v_dt = np.concatenate([q, qprev, w_axis, w_mag, v, dt])
+        np.testing.assert_allclose(self.planner.eq7d(q_qprev_waxis_wmag_v_dt), 0., atol=epsilon)
+
+    def test_eq7d_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        q = default_q(N)
+        w_axis = np.zeros((N, 3))
+        w_mag = np.zeros((N,1))
+        dt = np.zeros((2,1))
+        w_axis[0] = [0., 0., 1.]
+        w_mag[0] = 0
+
+        pelvis_orientation = [0.5934849924416884, 0.2151038891437094, 0.4302077782874188, 0.6453116674311282]
+        pelvis_position = [0.5, 1., 1.5+0.93845]
+        joint_positions = [i*0.5 for i in range(Atlas.NUM_ACTUATED_DOF)]
+        q[1] = np.array(pelvis_orientation + pelvis_position + joint_positions)
+        w_axis[1] = [0.26726124191242438468, 0.53452248382484876937, 0.80178372573727315405]
+        w_mag[1] = 3.74165738677394138558
+        v = default_v(N)
+        pelvis_rotational_velocity = [1., 2., 3.]
+        pelvis_linear_velocity = [1., 2., 3.]
+        joint_velocity = [i for i in range(Atlas.NUM_ACTUATED_DOF)]
+        v[1] = np.array(pelvis_rotational_velocity + pelvis_linear_velocity + joint_velocity)
+        dt[1] = 0.5
+        self.assertTrue(self.planner.check_eq7d_constraints(q, w_axis, w_mag, v, dt))
+
+    def test_eq7e_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        h = np.zeros((N, 3))
+        hd = np.zeros((N, 3))
+        dt = np.zeros((N, 1))
+        dt[1] = 1.0
+        self.assertTrue(self.planner.check_eq7e_constraints(h, hd, dt))
+
+        hd[1] = [1.0, -2.0, 3.0]
+        h[1] = [0.5, -1.0, 1.5]
+        dt[1] = 0.5
+        self.assertTrue(self.planner.check_eq7e_constraints(h, hd, dt))
+
+    def test_eq7f_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        r = np.zeros((N, 3))
+        rd = np.zeros((N, 3))
+        dt = np.zeros((N, 1))
+        dt[1] = 1.0
+        self.assertTrue(self.planner.check_eq7f_constraints(r, rd, dt))
+
+        rd[1] = [1.0, -2.0, 3.0]
+        r[0] = [0.0, 0.0, 0.0]
+        r[1] = [0.25, -0.5, 0.75]
+        dt[1] = 0.5
+        self.assertTrue(self.planner.check_eq7f_constraints(r, rd, dt))
+
+    def test_eq7g_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        rd = np.zeros((N, 3))
+        rdd = np.zeros((N, 3))
+        dt = np.zeros((N, 1))
+        dt[1] = 1.0
+        self.assertTrue(self.planner.check_eq7g_constraints(rd, rdd, dt))
+
+        rdd[1] = [1.0, -2.0, 3.0]
+        rd[1] = [0.5, -1.0, 1.5]
+        dt[1] = 0.5
+        self.assertTrue(self.planner.check_eq7g_constraints(rd, rdd, dt))
 
     def test_eq7h(self):
-        pass
+        self.skipTest("Unimplemented")
+
+    def test_eq7h_constraints(self):
+        self.skipTest("Unimplemented")
 
     def test_eq7i(self):
-        pass
+        self.skipTest("Unimplemented")
+
+    def test_eq7i_constraints(self):
+        self.skipTest("Unimplemented")
+
+    def test_eq7j_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        c = np.zeros((N, self.contact_dim))
+        self.assertTrue(self.planner.check_eq7j_constraints(c))
+
+        c[0] = [0.1, -9.9, 5.0] * self.num_contacts
+        c[1] = [-9.9, 0.1, 0.0] * self.num_contacts
+        self.assertTrue(self.planner.check_eq7j_constraints(c))
+
+        c[0] = [0.1, -9.9, -0.5] * self.num_contacts
+        c[1] = [-9.9, 0.1, 0.01] * self.num_contacts
+        self.assertFalse(self.planner.check_eq7j_constraints(c))
+
+    def test_eq7k_admissable_posture_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        q = default_q(N)
+        self.assertTrue(self.planner.check_eq7k_admissable_posture_constraints(q))
+
+        q[0, Atlas.FLOATING_BASE_QUAT_DOF + getActuatorIndex(self.plant, "l_leg_kny")] = 0
+        q[1, Atlas.FLOATING_BASE_QUAT_DOF + getActuatorIndex(self.plant, "l_leg_kny")] = 2.35637
+        self.assertTrue(self.planner.check_eq7k_admissable_posture_constraints(q))
+
+        q[0, Atlas.FLOATING_BASE_QUAT_DOF + getActuatorIndex(self.plant, "l_leg_kny")] = -0.1
+        q[1, Atlas.FLOATING_BASE_QUAT_DOF + getActuatorIndex(self.plant, "l_leg_kny")] = 2.4
+        self.assertFalse(self.planner.check_eq7k_admissable_posture_constraints(q))
+
+    def test_eq7k_joint_velocity_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        v = default_v(N)
+        self.assertTrue(self.planner.check_eq7k_joint_velocity_constraints(v))
+
+        v[0, Atlas.FLOATING_BASE_DOF + getActuatorIndex(self.plant, "r_leg_kny")] = -12
+        v[1, Atlas.FLOATING_BASE_DOF + getActuatorIndex(self.plant, "r_leg_kny")] = 12
+        self.assertTrue(self.planner.check_eq7k_joint_velocity_constraints(v))
+
+        v[0, Atlas.FLOATING_BASE_DOF + getActuatorIndex(self.plant, "r_leg_kny")] = -12.1
+        v[1, Atlas.FLOATING_BASE_DOF + getActuatorIndex(self.plant, "r_leg_kny")] = 12.1
+        self.assertFalse(self.planner.check_eq7k_joint_velocity_constraints(v))
+
+    def test_eq7k_friction_cone_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        F = np.zeros((N, self.contact_dim))
+        beta = np.zeros((N, self.num_contacts*self.N_d))
+        self.assertTrue(self.planner.check_eq7k_friction_cone_constraints(F, beta))
+
+        F[0, 3] = 1.0 # 2nd contact x
+        F[0, 4] = 2.0 # 2nd contact y
+        F[0, 5] = 3.0 # 2nd contact z
+        beta[0, 4] = 1.0 # 2nd contact [1.0, 0.0, 1.0] component
+        beta[0, 5] = 0.0 # 2nd contact [-1.0, 0.0, 1.0] component
+        beta[0, 6] = 2.0 # 2nd contact [0.0, 1.0, 1.0] component
+        beta[0, 7] = 0.0 # 2nd contact [0.0, -1.0, 1.0] component
+        self.assertTrue(self.planner.check_eq7k_friction_cone_constraints(F, beta))
+
+    def test_eq7k_beta_positive_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        beta = np.zeros((N, self.num_contacts*self.N_d))
+        self.assertTrue(self.planner.check_eq7k_beta_positive_constraints(beta))
+
+        beta[1][10] = -0.1
+        self.assertFalse(self.planner.check_eq7k_beta_positive_constraints(beta))
+
+        beta[1][10] = 0.1
+        self.assertTrue(self.planner.check_eq7k_beta_positive_constraints(beta))
+
+    def test_eq7k_torque_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        beta = np.zeros((N, self.num_contacts*self.N_d))
+        tau = np.zeros((N, self.num_contacts))
+        self.assertTrue(self.planner.check_eq7k_torque_constraints(tau, beta))
+
+        tau[0][3] = 1.0
+        self.assertFalse(self.planner.check_eq7k_torque_constraints(tau, beta))
+
+        tau[0][3] = 0.5
+        beta[0][4*3] = 0.1
+        beta[0][4*3+1] = 0.2
+        beta[0][4*3+2] = 0.3
+        beta[0][4*3+3] = 0.4
+        self.assertTrue(self.planner.check_eq7k_torque_constraints(tau, beta))
 
     def test_eq8a_lhs(self):
-        pass
+        self.skipTest("Unimplemented")
+
+    def test_eq8a_constraints(self):
+        self.skipTest("Unimplemented")
 
     def test_eq8b_lhs(self):
-        pass
+        self.skipTest("Unimplemented")
 
     def test_eq8c_2(self):
-        pass
+        self.skipTest("Unimplemented")
 
     def test_eq9a_lhs(self):
-        pass
+        self.skipTest("Unimplemented")
 
     def test_eq9b_lhs(self):
-        pass
+        self.skipTest("Unimplemented")
 
     def test_pose_error_cost(self):
-        pass
+        self.skipTest("Unimplemented")
 
     def test_standing_trajectory(self):
+        self.skipTest("Unimplemented")
+        return
         N = 2
         t = 0.5
-        num_contacts = 16
-        contact_dim = 3*16
-        N_d = 4
         q = np.zeros((N, self.plant.num_positions()))
         w_axis = np.zeros((N, 3))
         w_axis[:, 2] = 1.0
@@ -256,12 +451,12 @@ class TestHumanoidPlanner(unittest.TestCase):
         r = np.zeros((N, 3))
         rd = np.zeros((N, 3))
         rdd = np.zeros((N, 3))
-        c = np.zeros((N, contact_dim))
-        F = np.zeros((N, contact_dim))
-        tau = np.zeros((N, num_contacts))
+        c = np.zeros((N, self.contact_dim))
+        F = np.zeros((N, self.contact_dim))
+        tau = np.zeros((N, self.num_contacts))
         h = np.zeros((N, 3))
         hd = np.zeros((N, 3))
-        beta = np.zeros((N, num_contacts*N_d))
+        beta = np.zeros((N, self.num_contacts*self.N_d))
 
         ''' Initialize standing pose '''
         for i in range(N):

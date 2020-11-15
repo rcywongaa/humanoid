@@ -28,6 +28,7 @@ from collections.abc import Iterable
 mbp_time_step = 1.0e-3
 N_f = 3 # contact force dimension
 mu = 1.0 # Coefficient of friction
+friction_torque_coefficient = 0.5
 epsilon = 1e-9
 quaternion_epsilon = 1e-5
 PLAYBACK_ONLY = False
@@ -226,83 +227,6 @@ class HumanoidPlanner:
         plant, context = self.getPlantAndContext(q, v)
         return plant.CalcCenterOfMassPosition(context)
 
-    def eq7c(self, q_v_h):
-        q, v, h = np.split(q_v_h, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        return self.calc_h(q, v) - h
-
-    def eq7d(self, q_qprev_waxis_wmag_v_dt):
-        q, qprev, w_axis, w_mag, v, dt = np.split(q_qprev_waxis_wmag_v_dt, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_positions() + 3,
-            self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1,
-            self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1 + self.plant_float.num_velocities()])
-        plant, context = self.getPlantAndContext(q, v)
-        qd = plant.MapVelocityToQDot(context, v*dt[0])
-        # return q - qprev - qd
-        '''
-        As advised in
-        https://stackoverflow.com/a/63510131/3177701
-        '''
-        ret_quat = q[0:4] - apply_angular_velocity_to_quaternion(qprev[0:4], w_axis, w_mag, dt[0])
-        ret_linear = (q - qprev - qd)[4:]
-        ret = np.hstack([ret_quat, ret_linear])
-        return ret
-
-    def eq7h(self, q_v_r):
-        q, v, r = np.split(q_v_r, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        return  self.calc_r(q, v) - r
-
-    def eq7i(self, q_v_ck):
-        q, v, ck = np.split(q_v_ck, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        cj = np.reshape(ck, (self.num_contacts, 3))
-        # print(f"q = {q}\nv={v}\nck={ck}")
-        contact_positions = self.get_contact_positions(q, v).T
-        return (contact_positions - cj).flatten()
-
-    def eq8a_lhs(self, q_v_F):
-        q, v, F = np.split(q_v_F, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        Fj = np.reshape(F, (self.num_contacts, 3))
-        return [Fj[:,2].dot(self.get_contact_positions_z(q, v))] # Constraint functions must output vectors
-
-    def eq8b_lhs(self, q_v_tau):
-        q, v, tau = np.split(q_v_tau, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        tauj = self.toTauj(tau)
-        return (tauj**2).T.dot(self.get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
-
-    def eq8c_2(self, q_v):
-        q, v = np.split(q_v, [self.plant_float.num_positions()])
-        return self.get_contact_positions_z(q, v)
-
-    ''' Assume flat ground for now... '''
-    def eq9a_lhs(self, F_c_cprev, i):
-        F, c, c_prev = np.split(F_c_cprev, [
-            self.contact_dim,
-            self.contact_dim + self.contact_dim])
-        Fj = np.reshape(F, (self.num_contacts, 3))
-        cj = np.reshape(c, (self.num_contacts, 3))
-        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
-        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
-
-    def eq9b_lhs(self, F_c_cprev, i):
-        F, c, c_prev = np.split(F_c_cprev, [
-            self.contact_dim,
-            self.contact_dim + self.contact_dim])
-        Fj = np.reshape(F, (self.num_contacts, 3))
-        cj = np.reshape(c, (self.num_contacts, 3))
-        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
-        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
-
     def pose_error_cost(self, q_v_dt):
         q, v, dt = np.split(q_v_dt, [
             self.plant_float.num_positions(),
@@ -354,6 +278,12 @@ class HumanoidPlanner:
             "r": r
         })
 
+    def eq7c(self, q_v_h):
+        q, v, h = np.split(q_v_h, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        return self.calc_h(q, v) - h
+
     def add_eq7c_constraints(self):
         q = self.q
         v = self.v
@@ -372,6 +302,25 @@ class HumanoidPlanner:
             "h": h
         })
 
+    def eq7d(self, q_qprev_waxis_wmag_v_dt):
+        q, qprev, w_axis, w_mag, v, dt = np.split(q_qprev_waxis_wmag_v_dt, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_positions() + 3,
+            self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1,
+            self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1 + self.plant_float.num_velocities()])
+        plant, context = self.getPlantAndContext(q, v)
+        qd = plant.MapVelocityToQDot(context, v*dt[0])
+        # return q - qprev - qd
+        '''
+        As advised in
+        https://stackoverflow.com/a/63510131/3177701
+        '''
+        ret_quat = q[0:4] - apply_angular_velocity_to_quaternion(qprev[0:4], w_axis, w_mag, dt[0])
+        ret_linear = (q - qprev - qd)[4:]
+        ret = np.hstack([ret_quat, ret_linear])
+        return ret
+
     def add_eq7d_constraints(self):
         q = self.q
         w_axis = self.w_axis
@@ -386,6 +335,7 @@ class HumanoidPlanner:
                     ub=[0.0]*self.plant_float.num_positions(),
                     vars=np.concatenate([q[k], q[k-1], w_axis[k], w_mag[k], v[k], dt[k]]))
             constraint.evaluator().set_description(f"Eq(7d)[{k}]")
+            self.eq7d_constraints.append(constraint)
 
             # Deprecated
             # '''
@@ -407,7 +357,6 @@ class HumanoidPlanner:
             # self.prog.AddConstraint(eq(q[k,3] - q[k-1,3], 0.5*(-w1*q1 - w2*q2 - w3*q3)).reshape((1,)))
             # ''' Constrain other positions '''
             # self.prog.AddConstraint(eq(q[k, 4:] - q[k-1, 4:], v[k, 3:]*dt[k]))
-            self.eq7d_constraints.append(constraint)
 
     def check_eq7d_constraints(self, q, w_axis, w_mag, v, dt):
         return check_constraints(self.eq7d_constraints, {
@@ -470,6 +419,12 @@ class HumanoidPlanner:
             "dt": dt
         })
 
+    def eq7h(self, q_v_r):
+        q, v, r = np.split(q_v_r, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        return  self.calc_r(q, v) - r
+
     def add_eq7h_constraints(self):
         q = self.q
         v = self.v
@@ -488,6 +443,15 @@ class HumanoidPlanner:
             "v": v,
             "r": r
         })
+
+    def eq7i(self, q_v_ck):
+        q, v, ck = np.split(q_v_ck, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        cj = np.reshape(ck, (self.num_contacts, 3))
+        # print(f"q = {q}\nv={v}\nck={ck}")
+        contact_positions = self.get_contact_positions(q, v).T
+        return (contact_positions - cj).flatten()
 
     def add_eq7i_constraints(self):
         q = self.q
@@ -597,7 +561,6 @@ class HumanoidPlanner:
         for k in range(self.N):
             ''' Constrain torques - assume torque linear to friction cone'''
             beta_k = np.reshape(beta[k], (self.num_contacts, self.N_d))
-            friction_torque_coefficient = 0.1
             friction_torque_constraints = []
             for i in range(self.num_contacts):
                 max_torque = friction_torque_coefficient * np.sum(beta_k[i])
@@ -613,6 +576,13 @@ class HumanoidPlanner:
             "tau": tau,
             "beta": beta
         })
+
+    def eq8a_lhs(self, q_v_F):
+        q, v, F = np.split(q_v_F, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        Fj = np.reshape(F, (self.num_contacts, 3))
+        return [Fj[:,2].dot(self.get_contact_positions_z(q, v))] # Constraint functions must output vectors
 
     def add_eq8a_constraints(self):
         q = self.q
@@ -634,6 +604,13 @@ class HumanoidPlanner:
             "v": v,
             "F": F
         })
+
+    def eq8b_lhs(self, q_v_tau):
+        q, v, tau = np.split(q_v_tau, [
+            self.plant_float.num_positions(),
+            self.plant_float.num_positions() + self.plant_float.num_velocities()])
+        tauj = self.toTauj(tau)
+        return (tauj**2).T.dot(self.get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
 
     def add_eq8b_constraints(self):
         q = self.q
@@ -670,6 +647,10 @@ class HumanoidPlanner:
             "F": F
         })
 
+    def eq8c_2(self, q_v):
+        q, v = np.split(q_v, [self.plant_float.num_positions()])
+        return self.get_contact_positions_z(q, v)
+
     def add_eq8c_contact_distance_constraint(self):
         q = self.q
         v = self.v
@@ -688,6 +669,16 @@ class HumanoidPlanner:
             "q": q,
             "v": v
         })
+
+    ''' Assume flat ground for now... '''
+    def eq9a_lhs(self, F_c_cprev, i):
+        F, c, c_prev = np.split(F_c_cprev, [
+            self.contact_dim,
+            self.contact_dim + self.contact_dim])
+        Fj = np.reshape(F, (self.num_contacts, 3))
+        cj = np.reshape(c, (self.num_contacts, 3))
+        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
 
     def add_eq9a_constraints(self):
         F = self.F
@@ -714,6 +705,15 @@ class HumanoidPlanner:
             "F": F,
             "c": c
         })
+
+    def eq9b_lhs(self, F_c_cprev, i):
+        F, c, c_prev = np.split(F_c_cprev, [
+            self.contact_dim,
+            self.contact_dim + self.contact_dim])
+        Fj = np.reshape(F, (self.num_contacts, 3))
+        cj = np.reshape(c, (self.num_contacts, 3))
+        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
 
     def add_eq9b_constraints(self):
         F = self.F
@@ -876,7 +876,8 @@ class HumanoidPlanner:
         q = self.q
         self.unit_quaternion_constraints = []
         for k in range(self.N):
-            constraint = self.prog.AddConstraint(np.linalg.norm(q[k][0:4]) == 1.)
+            quaternion = q[k][0:4]
+            constraint = self.prog.AddConstraint(lambda x : [x @ x], [1], [1], quaternion)
             constraint.evaluator().set_description(f"unit quaternion constraint[{k}]")
             self.unit_quaternion_constraints.append(constraint)
 
@@ -900,6 +901,19 @@ class HumanoidPlanner:
             "v": v,
             "w_axis": w_axis,
             "w_mag": w_mag
+        })
+
+    def add_unit_axis_constraint(self):
+        w_axis = self.w_axis
+        self.unit_axis_constraints = []
+        for k in range(self.N):
+            constraint = self.prog.AddConstraint(lambda x: [x @ x], [1], [1], w_axis[k])
+            constraint.evaluator().set_description(f"unit axis constraint[{k}]")
+            self.unit_axis_constraints.append(constraint)
+
+    def check_unit_axis_constraint(self, w_axis):
+        return check_constraints(self.unit_axis_constraints, {
+            "w_axis": w_axis
         })
 
     def check_all_constraints(self, q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
@@ -934,7 +948,8 @@ class HumanoidPlanner:
                 and self.check_timestep_constraints(dt)
                 and self.check_joint_acceleration_constraints(v, dt)
                 and self.check_unit_quaternion_constraints(q)
-                and self.check_angular_velocity_constraints(v, w_axis, w_mag))
+                and self.check_angular_velocity_constraints(v, w_axis, w_mag)
+                and self.check_unit_axis_constraint(w_axis))
 
     def add_eq10_cost(self):
         q = self.q
@@ -1016,6 +1031,7 @@ class HumanoidPlanner:
         self.add_joint_acceleration_constraints()
         self.add_unit_quaternion_constraints()
         self.add_angular_velocity_constraints()
+        self.add_unit_axis_constraint()
 
         '''
         Constrain unbounded variables to improve IPOPT performance
@@ -1042,6 +1058,9 @@ class HumanoidPlanner:
             Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
         self.prog.SetDecisionVariableValueInVector(self.q, q_guess, initial_guess)
+
+        w_axis_guess = np.array([[0.0, 0.0, 1.0]] * self.N)
+        self.prog.SetDecisionVariableValueInVector(self.w_axis, w_axis_guess, initial_guess)
 
         v_traj_guess = position_traj_guess.MakeDerivative()
         w_traj_guess = quat_traj_guess.MakeDerivative()
@@ -1072,7 +1091,7 @@ class HumanoidPlanner:
         start_solve_time = time.time()
         print(f"Start solving...")
         result = solver.Solve(self.prog, initial_guess, options) # Currently takes around 30 mins
-        print(f"Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()} Success: {result.is_success()}")
+        print(f"Success: {result.is_success()}  Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
         self.q_sol = result.GetSolution(self.q)
         self.v_sol = result.GetSolution(self.v)
         self.dt_sol = result.GetSolution(self.dt)
@@ -1107,8 +1126,8 @@ def main():
     q_final[4] = 0.0 # x position of pelvis
     q_final[6] = 0.9 # z position of pelvis (to make sure final pose touches ground)
 
-    num_knot_points = 40
-    max_time = 1.0
+    num_knot_points = 50
+    max_time = 2.0
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
