@@ -609,8 +609,7 @@ class HumanoidPlanner:
         q, v, tau = np.split(q_v_tau, [
             self.plant_float.num_positions(),
             self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        tauj = self.toTauj(tau)
-        return (tauj**2).T.dot(self.get_contact_positions_z(q, v)) # Outputs per axis sum of torques of all contact points
+        return [(tau**2).T.dot(self.get_contact_positions_z(q, v))] # Must return a vector
 
     def add_eq8b_constraints(self):
         q = self.q
@@ -620,8 +619,8 @@ class HumanoidPlanner:
         for k in range(self.N):
             constraint = self.prog.AddConstraint(
                     self.eq8b_lhs,
-                    lb=[-slack]*3,
-                    ub=[slack]*3,
+                    lb=[-slack],
+                    ub=[slack],
                     vars=np.concatenate([q[k], v[k], tau[k]]))
             constraint.evaluator().set_description(f"Eq(8b)[{k}]")
             self.eq8b_constraints.append(constraint)
