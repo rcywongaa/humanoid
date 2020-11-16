@@ -420,19 +420,145 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.skipTest("Unimplemented")
 
     def test_eq8a_constraints(self):
-        self.skipTest("Unimplemented")
+        N = 2
+        self.create_default_program(N)
+        q = default_q(N)
+        v = default_v(N)
+        F = np.zeros((N, self.contact_dim))
+        self.assertTrue(self.planner.check_eq8a_constraints(q, v, F))
+
+        q[1][6] = 0.93845
+        F[1][11] = 10.0
+        self.assertTrue(self.planner.check_eq8a_constraints(q, v, F))
+
+        q[1][6] = 1.0
+        F[1][11] = 10.0
+        self.assertFalse(self.planner.check_eq8a_constraints(q, v, F))
 
     def test_eq8b_lhs(self):
         self.skipTest("Unimplemented")
 
+    def test_eq8b_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        q = default_q(N)
+        v = default_v(N)
+        tau = np.zeros((N, self.num_contacts))
+        self.assertTrue(self.planner.check_eq8b_constraints(q, v, tau))
+
+        q[0][6] = 0.93845
+        tau[0][8] = -1.0
+        self.assertTrue(self.planner.check_eq8b_constraints(q, v, tau))
+
+        q[0][6] = 1.0
+        tau[0][8] = 1.0
+        self.assertFalse(self.planner.check_eq8b_constraints(q, v, tau))
+
+    def test_eq8c_contact_force_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        F = np.zeros((N, self.contact_dim))
+        self.assertTrue(self.planner.check_eq8c_contact_force_constraints(F))
+
+        F[0][3] = -0.1 # 2nd contact x
+        F[0][4] = -0.1 # 2nd contact y
+        F[0][5] = 0.1 # 2nd contact z
+        self.assertTrue(self.planner.check_eq8c_contact_force_constraints(F))
+
+        F[0][3] = 0.1 # 2nd contact x
+        F[0][4] = 0.1 # 2nd contact y
+        F[0][5] = -0.1 # 2nd contact z
+        self.assertFalse(self.planner.check_eq8c_contact_force_constraints(F))
+
     def test_eq8c_2(self):
+        self.skipTest("Unimplemented")
+
+    def test_eq8c_contact_distance_constraint(self):
         self.skipTest("Unimplemented")
 
     def test_eq9a_lhs(self):
         self.skipTest("Unimplemented")
 
+    def test_eq9a_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+
+        ''' Allow contact point to move if contact force on another contact '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.2 # 16th contact z
+        c[0, 3*14] = 0.1 # 15th contact x
+        c[1, 3*14] = 0.2 # 15th contact x
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+
+        ''' Contact point should not move when applying contact force '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.2 # 16th contact z
+        c[0, 3*15] = 0.1 # 16th contact x
+        c[1, 3*15] = 0.2 # 16th contact x
+        self.assertFalse(self.planner.check_eq9a_constraints(F, c))
+
+        ''' Allow contact points to move if no contact force '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.0 # 16th contact z
+        c[0, 3*15] = 0.1 # 16th contact x
+        c[1, 3*15] = 0.2 # 16th contact x
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+
+        ''' This should not check for y axis slipping '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.2 # 16th contact z
+        c[0, 3*15+1] = 0.1 # 16th contact y
+        c[1, 3*15+1] = 0.2 # 16th contact y
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+
     def test_eq9b_lhs(self):
         self.skipTest("Unimplemented")
+
+    def test_eq9b_constraints(self):
+        N = 2
+        self.create_default_program(N)
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
+
+        ''' Allow contact point to move if contact force on another contact '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.2 # 16th contact z
+        c[0, 3*14+1] = 0.1 # 15th contact y
+        c[1, 3*14+1] = 0.2 # 15th contact y
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
+
+        ''' Contact point should not move when applying contact force '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.2 # 16th contact z
+        c[0, 3*15+1] = 0.1 # 16th contact y
+        c[1, 3*15+1] = 0.2 # 16th contact y
+        self.assertFalse(self.planner.check_eq9b_constraints(F, c))
+
+        ''' Allow contact points to move if no contact force '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.0 # 16th contact x
+        c[0, 3*15+1] = 0.1 # 16th contact y
+        c[1, 3*15+1] = 0.2 # 16th contact y
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
+
+        ''' This should not check for x axis slipping '''
+        F = np.zeros((N, self.contact_dim))
+        c = np.zeros((N, self.contact_dim))
+        F[1][3*15 + 2] = 0.2 # 16th contact z
+        c[0, 3*15] = 0.1 # 16th contact x
+        c[1, 3*15] = 0.2 # 16th contact x
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
 
     def test_pose_error_cost(self):
         self.skipTest("Unimplemented")
