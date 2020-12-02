@@ -650,7 +650,7 @@ class HumanoidPlanner:
         q, v = np.split(q_v, [self.plant_float.num_positions()])
         return self.get_contact_positions_z(q, v)
 
-    def add_eq8c_contact_distance_constraint(self):
+    def add_eq8c_contact_distance_constraints(self):
         q = self.q
         v = self.v
         self.eq8c_contact_distance_constraints = []
@@ -663,7 +663,7 @@ class HumanoidPlanner:
             constraint.evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero")
             self.eq8c_contact_distance_constraints.append(constraint)
 
-    def check_eq8c_contact_distance_constraint(self, q, v):
+    def check_eq8c_contact_distance_constraints(self, q, v):
         return check_constraints(self.eq8c_contact_distance_constraints, {
             "q": q,
             "v": v
@@ -1012,7 +1012,7 @@ class HumanoidPlanner:
             self.add_eq8a_constraints()
             self.add_eq8b_constraints()
             self.add_eq8c_contact_force_constraints()
-            self.add_eq8c_contact_distance_constraint()
+            self.add_eq8c_contact_distance_constraints()
             self.add_eq9a_constraints()
             self.add_eq9b_constraints()
 

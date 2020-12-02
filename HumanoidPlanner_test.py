@@ -474,7 +474,22 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.skipTest("Unimplemented")
 
     def test_eq8c_contact_distance_constraint(self):
-        self.skipTest("Unimplemented")
+        N = 2
+        self.create_default_program(N)
+        q = default_q(N)
+        v = default_v(N)
+
+        q[0][6] = 0.93845
+        q[1][6] = 0.93845
+        self.assertTrue(self.planner.check_eq8c_contact_distance_constraints(q, v))
+
+        q[0][6] = 0.938
+        q[1][6] = 0.93845
+        self.assertFalse(self.planner.check_eq8c_contact_distance_constraints(q, v))
+
+        q[0][6] = 0.93845
+        q[1][6] = 0.938
+        self.assertFalse(self.planner.check_eq8c_contact_distance_constraints(q, v))
 
     def test_eq9a_lhs(self):
         self.skipTest("Unimplemented")
