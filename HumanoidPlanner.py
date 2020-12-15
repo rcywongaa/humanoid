@@ -1044,7 +1044,7 @@ class HumanoidPlanner:
                 # .evaluator().set_description("max beta"))
 
     def solve(self):
-        ''' Solve '''
+        ''' Guess '''
         initial_guess = np.empty(self.prog.num_vars())
         dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
         self.prog.SetDecisionVariableValueInVector(self.dt, dt_guess, initial_guess)
@@ -1082,6 +1082,11 @@ class HumanoidPlanner:
             self.calc_h(q_guess[i], v_guess[i]) for i in range(self.N)])
         self.prog.SetDecisionVariableValueInVector(self.h, h_guess, initial_guess)
 
+        F_guess = np.zeros((self.N, self.contact_dim))
+        F_guess[:,2] = Atlas.M * Atlas.g / self.num_contacts
+        self.prog.SetDecisionVariableValueInVector(self.F, F_guess, initial_guess)
+
+        ''' Solve '''
         solver = SnoptSolver()
         options = SolverOptions()
         # options.SetOption(solver.solver_id(), "max_iter", 50000)
