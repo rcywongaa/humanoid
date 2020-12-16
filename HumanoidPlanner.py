@@ -1083,7 +1083,7 @@ class HumanoidPlanner:
         self.prog.SetDecisionVariableValueInVector(self.h, h_guess, initial_guess)
 
         F_guess = np.zeros((self.N, self.contact_dim))
-        F_guess[:,2] = Atlas.M * Atlas.g / self.num_contacts
+        F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
         self.prog.SetDecisionVariableValueInVector(self.F, F_guess, initial_guess)
 
         ''' Solve '''
