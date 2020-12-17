@@ -36,8 +36,8 @@ ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
 MAX_GROUND_PENETRATION = 0.0
 MAX_JOINT_ACCELERATION = 20.0
 g = np.array([0, 0, -Atlas.g])
-MIN_TIMESTEP = 0.005
-MAX_TIMESTEP = 0.05
+MIN_TIMESTEP = 0.001
+MAX_TIMESTEP = 0.1
 '''
 Slack for the complementary constraints
 Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
@@ -819,7 +819,7 @@ class HumanoidPlanner:
     def add_max_time_constraints(self):
         dt = self.dt
         self.max_time_constraints = []
-        constraint = self.prog.AddLinearConstraint(np.sum(dt) <= self.T)
+        constraint = self.prog.AddLinearConstraint(np.sum(dt) == self.T)
         constraint.evaluator().set_description("max time")
         self.max_time_constraints.append(constraint)
 
@@ -994,10 +994,10 @@ class HumanoidPlanner:
         self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
         self.add_eq7a_constraints()
-        self.add_eq7b_constraints()
-        self.add_eq7c_constraints()
+        # self.add_eq7b_constraints()
+        # self.add_eq7c_constraints()
         self.add_eq7d_constraints()
-        self.add_eq7e_constraints()
+        # self.add_eq7e_constraints()
         self.add_eq7f_constraints()
         self.add_eq7g_constraints()
         self.add_eq7h_constraints()
@@ -1125,13 +1125,13 @@ def main():
     set_atlas_initial_pose(plant, upright_context)
     q_nom = plant.GetPositions(upright_context)
     q_init = q_nom.copy()
-    q_init[6] = 0.94 # Avoid initializing with ground penetration
+    q_init[6] = 0.93846 # Avoid initializing with ground penetration
     q_final = q_init.copy()
     q_final[4] = 0.0 # x position of pelvis
-    q_final[6] = 0.9 # z position of pelvis (to make sure final pose touches ground)
+    q_final[6] = 0.93845 # z position of pelvis (to make sure final pose touches ground)
 
     num_knot_points = 50
-    max_time = 2.0
+    max_time = 0.5
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
