@@ -3,9 +3,9 @@
 ## Rough Idea
 1. Given start and end position, generate sequence of footsteps
    - Footstep Planning on Uneven Terrain with Mixed-Integer Convex Optimization (Robin Deits and Russ Tedrake)
-1. Given sequence of footsteps, generate ZMP trajectory
+1. Given sequence of footsteps, generate ZMP trajectory (`HumanoidPlanner.py`)
    - Whole-body Motion Planning with Centroidal Dynamics and Full Kinematics (Hongkai Dai, Andrés Valenzuela and Russ Tedrake)
-1. Given ZMP trajectory and footstep sequence, generate torque outputs
+1. Given ZMP trajectory and footstep sequence, generate torque outputs (`HumanoidController.py`)
    - An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion (Scott Kuindersma, Frank Permenter, and Russ Tedrake)
 
 
@@ -45,9 +45,14 @@ sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
 
 ![HumanoidController](resources/output.gif)
 
-#### Troubleshooting
+### HumanoidPlanner (WIP)
+#### Problems
+- Optimization program fails
+- For some reason, program seems to actively avoid feet touching ground
 
-##### Out of memory when building drake
+## Troubleshooting
+
+### Out of memory when building drake
 In `CMakeLists.txt`, add `--jobs 4` after `${BAZEL_TARGETS}`
 ```
 ExternalProject_Add(drake_cxx_python
@@ -77,14 +82,14 @@ ExternalProject_Add(drake_cxx_python
 )
 ```
 
-##### Link error on `std::filesystem` calls
+### Link error on `std::filesystem` calls
 Error
 ```
 error: undefined reference to 'std::filesystem::__cxx11::path::_M_find_extension() const'
 ```
 Use gcc 7 instead of gcc 8
 
-#### VTK problems when launching drake-visualizer
+### VTK problems when launching drake-visualizer
 - `ModuleNotFoundError: No module named 'vtkCommonCorePython'`
 - `libvtkxxx.so: No such file or directory`
 In `CMakeLists.txt`, add `--define="-DUSE_SYSTEM_VTK=OFF"` after `${BAZEL_TARGETS}`
