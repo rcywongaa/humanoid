@@ -38,7 +38,12 @@ sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
    ```
    ./drake-visualizer
    ```
-1. Run `python3 balance.py`
+1. Run `python3 HumanoidController.py`
+
+### HumanoidController
+(Sped up 30x)
+
+![HumanoidController](resources/output.gif)
 
 #### Troubleshooting
 
@@ -92,7 +97,6 @@ Use gcc 7 instead of gcc 8
 In `CMakeLists.txt`, add `--define="-DUSE_SYSTEM_VTK=OFF"` after `${BAZEL_TARGETS}`
 
 ## Resources
-
 
 ### Affordable Robots
 - Thormang
