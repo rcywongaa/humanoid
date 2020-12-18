@@ -84,14 +84,7 @@ error: undefined reference to 'std::filesystem::__cxx11::path::_M_find_extension
 ```
 Use gcc 7 instead of gcc 8
 
-## Run
-1. Launch `drake-visualizer`
-   ```
-   ./drake-visualizer
-   ```
-1. Run `python3 load_atlas.py`
-
-### VTK problems when launching drake-visualizer
+#### VTK problems when launching drake-visualizer
 - `ModuleNotFoundError: No module named 'vtkCommonCorePython'`
 - `libvtkxxx.so: No such file or directory`
 In `CMakeLists.txt`, add `--define="-DUSE_SYSTEM_VTK=OFF"` after `${BAZEL_TARGETS}`
@@ -100,21 +93,21 @@ In `CMakeLists.txt`, add `--define="-DUSE_SYSTEM_VTK=OFF"` after `${BAZEL_TARGET
 
 ### Affordable Robots
 - Thormang
-- Nao (~5.5k USD)
+- Nao (~5.5k USD) (25 DoF)
 - KHR-3HV (~ 2.6k USD)
 
 ### Simulation resources
 
-#### Thormang (2019)
+#### Thormang (2019) (29 DoF)
 - <https://github.com/thor-mang>
 - <https://github.com/ROBOTIS-GIT/ROBOTIS-THORMANG-OPC>
 
-#### R5 (2017)
+#### Valkyrie R5 (2017)
 - <https://github.com/osrf-migration/srcsim-wiki>
 - <https://github.com/osrf/srcsim>
 - <https://github.com/osrf/srcsim_docker/tree/master/docker>
 
-#### Atlas (2016)
+#### Atlas (2016) (37 DoF)
 - <https://github.com/osrf/drcsim>
 - <https://github.com/osrf-migration/drcsim-wiki>
 
