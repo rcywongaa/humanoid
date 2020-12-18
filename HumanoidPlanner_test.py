@@ -194,6 +194,18 @@ class TestHumanoidPlanner(unittest.TestCase):
         expected_contact_positions_z = [0.] * Atlas.NUM_CONTACTS
         np.testing.assert_allclose(contact_positions_z, expected_contact_positions_z, atol=epsilon)
 
+        pelvis_orientation = [1., 0., 0., 0.]
+        pelvis_position = [0., 0., 1.03845]
+        joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
+        q = np.array(pelvis_orientation + pelvis_position + joint_positions)
+        pelvis_rotational_velocity = [0., 0., 0.]
+        pelvis_linear_velocity = [0., 0., 0.]
+        joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
+        v = np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
+        contact_positions_z = self.planner.get_contact_positions_z(q, v)
+        expected_contact_positions_z = [0.1] * Atlas.NUM_CONTACTS
+        np.testing.assert_allclose(contact_positions_z, expected_contact_positions_z, atol=epsilon)
+
     def test_eq7a_constraints(self):
         N = 2
         self.create_default_program(N)
