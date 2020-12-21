@@ -23,7 +23,7 @@ import numpy as np
 import time
 import pdb
 import pickle
-from collections.abc import Iterable 
+from collections.abc import Iterable
 
 mbp_time_step = 1.0e-3
 N_f = 3 # contact force dimension
@@ -511,8 +511,8 @@ class HumanoidPlanner:
         self.eq7k_admissable_posture_constraints = []
         for k in range(self.N):
             constraint = self.prog.AddBoundingBoxConstraint(
-                    self.sorted_joint_position_lower_limits, 
-                    self.sorted_joint_position_upper_limits, 
+                    self.sorted_joint_position_lower_limits,
+                    self.sorted_joint_position_upper_limits,
                     q[k, Atlas.FLOATING_BASE_QUAT_DOF:])
             constraint.evaluator().set_description(f"Eq(7k)[{k}] joint position")
             self.eq7k_admissable_posture_constraints.append(constraint)
@@ -879,7 +879,7 @@ class HumanoidPlanner:
         self.unit_quaternion_constraints = []
         for k in range(self.N):
             quaternion = q[k][0:4]
-            constraint = self.prog.AddConstraint(lambda x : [x @ x], [1], [1], quaternion)
+            constraint = self.prog.AddConstraint(lambda x : [x @ x], lb=[1], ub=[1], vars=quaternion)
             constraint.evaluator().set_description(f"unit quaternion constraint[{k}]")
             self.unit_quaternion_constraints.append(constraint)
 
