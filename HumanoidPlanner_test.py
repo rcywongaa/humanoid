@@ -428,9 +428,6 @@ class TestHumanoidPlanner(unittest.TestCase):
         beta[0][4*3+3] = 0.4
         self.assertTrue(self.planner.check_eq7k_torque_constraints(tau, beta))
 
-    def test_eq8a_lhs(self):
-        self.skipTest("Unimplemented")
-
     def test_eq8a_constraints(self):
         N = 2
         self.create_default_program(N)
@@ -446,9 +443,6 @@ class TestHumanoidPlanner(unittest.TestCase):
         q[1][6] = 1.0
         F[1][11] = 10.0
         self.assertFalse(self.planner.check_eq8a_constraints(q, v, F))
-
-    def test_eq8b_lhs(self):
-        self.skipTest("Unimplemented")
 
     def test_eq8b_constraints(self):
         N = 2
@@ -481,9 +475,6 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[0][4] = 0.1 # 2nd contact y
         F[0][5] = -0.1 # 2nd contact z
         self.assertFalse(self.planner.check_eq8c_contact_force_constraints(F))
-
-    def test_eq8c_2(self):
-        self.skipTest("Unimplemented")
 
     def test_eq8c_contact_distance_constraint(self):
         N = 2

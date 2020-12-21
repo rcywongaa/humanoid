@@ -43,7 +43,6 @@ Slack for the complementary constraints
 Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
 '''
 # slack = 1e-3
-slack = 1e-2
 
 def create_q_interpolation(plant, context, q_traj, v_traj, dt_traj):
     t_traj = np.cumsum(dt_traj)
@@ -235,6 +234,24 @@ class HumanoidPlanner:
         Q_q = 1.0 * np.identity(plant.num_velocities())
         q_err = plant.MapQDotToVelocity(context, q-self.q_nom)
         return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
+
+    def add_constraint(self, func, *args, ub =[0], lb =[0]):
+        arg_list = list(args)
+        for i in range(len(arg_list)):
+            if not isinstance(arg_list[i], Iterable):
+                arg_list[i] = [arg_list[i]]
+
+        arg_sizes = list(map(lambda arg : len(arg), arg_list))
+        arg_splits = np.cumsum(arg_sizes)[:-1]
+
+        def wrapped_func(concatenated_args, arg_splits):
+            return func(*(np.split(concatenated_args, arg_splits)))
+
+        return self.prog.AddConstraint(
+                lambda concatenated_args, arg_splits=arg_splits : wrapped_func(concatenated_args, arg_splits), # Must return a vector
+                lb=lb,
+                ub=ub,
+                vars=np.concatenate(arg_list))
 
     def add_eq7a_constraints(self):
         F = self.F
@@ -577,24 +594,18 @@ class HumanoidPlanner:
             "beta": beta
         })
 
-    def eq8a_lhs(self, q_v_F):
-        q, v, F = np.split(q_v_F, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        Fj = np.reshape(F, (self.num_contacts, 3))
-        return [Fj[:,2].dot(self.get_contact_positions_z(q, v))] # Constraint functions must output vectors
-
     def add_eq8a_constraints(self):
+        def eq8a_lhs(q, v, F, slack):
+            Fj = np.reshape(F, (self.num_contacts, 3))
+            return Fj[:,2].dot(self.get_contact_positions_z(q, v)) - slack # Constraint functions must output vectors
+
         q = self.q
         v = self.v
         F = self.F
+        slack = self.slack
         self.eq8a_constraints = []
         for k in range(self.N):
-            constraint = self.prog.AddConstraint(
-                    self.eq8a_lhs,
-                    lb=[-slack],
-                    ub=[slack],
-                    vars=np.concatenate([q[k], v[k], F[k]]))
+            constraint = self.add_constraint(eq8a_lhs, q[k], v[k], F[k], slack)
             constraint.evaluator().set_description(f"Eq(8a)[{k}]")
             self.eq8a_constraints.append(constraint)
 
@@ -605,23 +616,16 @@ class HumanoidPlanner:
             "F": F
         })
 
-    def eq8b_lhs(self, q_v_tau):
-        q, v, tau = np.split(q_v_tau, [
-            self.plant_float.num_positions(),
-            self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        return [(tau**2).T.dot(self.get_contact_positions_z(q, v))] # Must return a vector
-
     def add_eq8b_constraints(self):
         q = self.q
         v = self.v
         tau = self.tau
+        slack = self.slack
         self.eq8b_constraints = []
         for k in range(self.N):
-            constraint = self.prog.AddConstraint(
-                    self.eq8b_lhs,
-                    lb=[-slack],
-                    ub=[slack],
-                    vars=np.concatenate([q[k], v[k], tau[k]]))
+            constraint = self.add_constraint(
+                    lambda q, v, tau, slack : (tau**2).T.dot(self.get_contact_positions_z(q, v)) - slack,
+                    q[k], v[k], tau[k], slack)
             constraint.evaluator().set_description(f"Eq(8b)[{k}]")
             self.eq8b_constraints.append(constraint)
 
@@ -646,20 +650,20 @@ class HumanoidPlanner:
             "F": F
         })
 
-    def eq8c_2(self, q_v):
-        q, v = np.split(q_v, [self.plant_float.num_positions()])
-        return self.get_contact_positions_z(q, v)
-
     def add_eq8c_contact_distance_constraints(self):
         q = self.q
         v = self.v
         self.eq8c_contact_distance_constraints = []
         for k in range(self.N):
-            # TODO: Why can't this be converted to a linear constraint?
-            constraint = self.prog.AddConstraint(self.eq8c_2,
-                    lb=[-MAX_GROUND_PENETRATION]*self.num_contacts,
-                    ub=[float('inf')]*self.num_contacts,
-                    vars=np.concatenate([q[k], v[k]]))
+            # TODO: Why can't this be converted to a linear / boundingbox constraint?
+            # constraint = self.prog.AddConstraint(
+                    # ge(self.get_contact_positions_z(q[k], v[k]), -MAX_GROUND_PENETRATION))
+
+            constraint = self.add_constraint(
+                    lambda q, v : self.get_contact_positions_z(q, v),
+                    q[k], v[k],
+                    lb=[-MAX_GROUND_PENETRATION] * self.num_contacts,
+                    ub=[float('inf')] * self.num_contacts)
             constraint.evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero")
             self.eq8c_contact_distance_constraints.append(constraint)
 
@@ -669,19 +673,17 @@ class HumanoidPlanner:
             "v": v
         })
 
-    ''' Assume flat ground for now... '''
-    def eq9a_lhs(self, F_c_cprev, i):
-        F, c, c_prev = np.split(F_c_cprev, [
-            self.contact_dim,
-            self.contact_dim + self.contact_dim])
-        Fj = np.reshape(F, (self.num_contacts, 3))
-        cj = np.reshape(c, (self.num_contacts, 3))
-        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
-        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0]))]
-
     def add_eq9a_constraints(self):
+        ''' Assume flat ground for now... '''
+        def eq9a_lhs(F, c, c_prev, i, slack):
+            Fj = np.reshape(F, (self.num_contacts, 3))
+            cj = np.reshape(c, (self.num_contacts, 3))
+            cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+            return Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) - slack
+
         F = self.F
         c = self.c
+        slack = self.slack
         self.eq9a_constraints = []
         for k in range(1, self.N):
             contact_constraints = []
@@ -690,11 +692,13 @@ class HumanoidPlanner:
                 i=i is used to capture the outer scope i variable
                 https://stackoverflow.com/a/2295372/3177701
                 '''
-                constraint = self.prog.AddConstraint(
-                        lambda F_c_cprev, i=i : self.eq9a_lhs(F_c_cprev, i),
-                        ub=[slack],
-                        lb=[-slack],
-                        vars=np.concatenate([F[k], c[k], c[k-1]]))
+
+                # This doesn't work because MathematicalProgram.AddConstraint doesn't like vars having non-Variable types
+                # constraint = self.add_constraint(eq9a_lhs, F[k], c[k], c[k-1], i, slack)
+
+                constraint = self.add_constraint(
+                        lambda F, c, cprev, slack, i=i : eq9a_lhs(F, c, cprev, i, slack),
+                        F[k], c[k], c[k-1], slack)
                 constraint.evaluator().set_description("Eq(9a)[{k}][{i}]")
                 contact_constraints.append(constraint)
             self.eq9a_constraints.append(contact_constraints)
@@ -705,18 +709,16 @@ class HumanoidPlanner:
             "c": c
         })
 
-    def eq9b_lhs(self, F_c_cprev, i):
-        F, c, c_prev = np.split(F_c_cprev, [
-            self.contact_dim,
-            self.contact_dim + self.contact_dim])
-        Fj = np.reshape(F, (self.num_contacts, 3))
-        cj = np.reshape(c, (self.num_contacts, 3))
-        cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
-        return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0]))]
-
     def add_eq9b_constraints(self):
+        def eq9b_lhs(F, c, c_prev, i, slack):
+            Fj = np.reshape(F, (self.num_contacts, 3))
+            cj = np.reshape(c, (self.num_contacts, 3))
+            cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+            return Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) - slack
+
         F = self.F
         c = self.c
+        slack = self.slack
         self.eq9b_constraints = []
         for k in range(1, self.N):
             contact_constraints = []
@@ -725,11 +727,9 @@ class HumanoidPlanner:
                 i=i is used to capture the outer scope i variable
                 https://stackoverflow.com/a/2295372/3177701
                 '''
-                constraint = self.prog.AddConstraint(
-                        lambda F_c_cprev, i=i : self.eq9b_lhs(F_c_cprev, i),
-                        ub=[slack],
-                        lb=[-slack],
-                        vars=np.concatenate([F[k], c[k], c[k-1]]))
+                constraint = self.add_constraint(
+                        lambda F, c, cprev, slack, i=i : eq9b_lhs(F, c, cprev, i, slack),
+                        F[k], c[k], c[k-1], slack)
                 constraint.evaluator().set_description("Eq(9b)[{k}][{i}]")
                 contact_constraints.append(constraint)
             self.eq9b_constraints.append(contact_constraints)
@@ -739,6 +739,9 @@ class HumanoidPlanner:
             "F": F,
             "c": c
         })
+
+    def add_slack_constraints(self):
+        self.prog.AddConstraint(ge(self.slack, 0))
 
     def add_initial_pose_constraints(self):
         q = self.q
@@ -962,6 +965,9 @@ class HumanoidPlanner:
                     + v[k].dot(Q_v).dot(v[k])
                     + rdd[k].dot(rdd[k])))[0])
 
+    def add_slack_cost(self):
+        self.prog.AddCost(1e3*self.slack[0])
+
     def create_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
         assert(max_time / num_knot_points > MIN_TIMESTEP)
         assert(max_time / num_knot_points < MAX_TIMESTEP)
@@ -988,6 +994,7 @@ class HumanoidPlanner:
         self.tau = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts, name="tau") # We assume only z torque exists
         self.h = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="h")
         self.hd = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="hd")
+        self.slack = self.prog.NewContinuousVariables(1, name="slack")
 
         ''' Additional variables not explicitly stated '''
         # Friction cone scale
@@ -1015,6 +1022,8 @@ class HumanoidPlanner:
             self.add_eq8c_contact_distance_constraints()
             self.add_eq9a_constraints()
             self.add_eq9b_constraints()
+            self.add_slack_constraints()
+            self.add_slack_cost()
 
         self.add_eq10_cost()
 
@@ -1085,6 +1094,9 @@ class HumanoidPlanner:
         F_guess = np.zeros((self.N, self.contact_dim))
         F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
         self.prog.SetDecisionVariableValueInVector(self.F, F_guess, initial_guess)
+
+        slack_guess = [0.1]
+        self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
 
         ''' Solve '''
         solver = SnoptSolver()
