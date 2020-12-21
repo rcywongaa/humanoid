@@ -92,6 +92,7 @@ Use gcc 7 instead of gcc 8
 ### VTK problems when launching drake-visualizer
 - `ModuleNotFoundError: No module named 'vtkCommonCorePython'`
 - `libvtkxxx.so: No such file or directory`
+
 In `CMakeLists.txt`, add `--define="-DUSE_SYSTEM_VTK=OFF"` after `${BAZEL_TARGETS}`
 
 ## Resources
