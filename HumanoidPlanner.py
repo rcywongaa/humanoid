@@ -194,11 +194,18 @@ class HumanoidPlanner:
             return self.plant_float, self.context_float
 
     '''
-    Creates an np.array of shape [num_contacts, 3] where first 2 rows are zeros
+    Reshapes vector of tau[k] of shape [num_contacts, 1]
+    into an np.array of shape [num_contacts, 3] where first 2 rows are zeros
     since we only care about tau in the z direction
     '''
-    def toTauj(self, tau_k):
+    def reshape_tauj(self, tau_k):
         return np.hstack([np.zeros((self.num_contacts, 2)), np.reshape(tau_k, (self.num_contacts, 1))])
+
+    '''
+    Reshapes np.array of shape [3*num_contacts] to np.array of shape [num_contacts, 3]
+    '''
+    def reshape_3d_contact(self, v):
+        return np.reshape(v, (self.num_contacts, 3))
 
     '''
     Returns contact positions in the shape [3, num_contacts]
@@ -213,9 +220,9 @@ class HumanoidPlanner:
             contact_positions_per_frame.append(contact_positions)
         return np.concatenate(contact_positions_per_frame, axis=1)
 
-    ''' Assume flat ground for now... '''
-    def get_contact_positions_z(self, q, v):
-        return self.get_contact_positions(q, v)[2,:]
+    ''' Use c variable instead '''
+    # def get_contact_positions_z(self, q, v):
+        # return self.get_contact_positions(q, v)[2,:]
 
     # https://stackoverflow.com/questions/63454077/how-to-obtain-centroidal-momentum-matrix/63456202#63456202
     def calc_h(self, q, v):
@@ -258,7 +265,7 @@ class HumanoidPlanner:
         rdd = self.rdd
         self.eq7a_constraints = []
         for k in range(self.N):
-            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            Fj = self.reshape_3d_contact(F[k])
             constraint = self.prog.AddLinearConstraint(
                     eq(Atlas.M*rdd[k], np.sum(Fj, axis=0) + Atlas.M*g))
             constraint.evaluator().set_description(f"Eq(7a)[{k}]")
@@ -278,9 +285,9 @@ class HumanoidPlanner:
         r = self.r
         self.eq7b_constraints = []
         for k in range(self.N):
-            Fj = np.reshape(F[k], (self.num_contacts, 3))
-            cj = np.reshape(c[k], (self.num_contacts, 3))
-            tauj = self.toTauj(self.tau[k])
+            Fj = self.reshape_3d_contact(F[k])
+            cj = self.reshape_3d_contact(c[k])
+            tauj = self.reshape_tauj(self.tau[k])
             constraint = self.prog.AddConstraint(
                     eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
             constraint.evaluator().set_description(f"Eq(7b)[{k}]")
@@ -465,7 +472,7 @@ class HumanoidPlanner:
         q, v, ck = np.split(q_v_ck, [
             self.plant_float.num_positions(),
             self.plant_float.num_positions() + self.plant_float.num_velocities()])
-        cj = np.reshape(ck, (self.num_contacts, 3))
+        cj = self.reshape_3d_contact(ck)
         # print(f"q = {q}\nv={v}\nck={ck}")
         contact_positions = self.get_contact_positions(q, v).T
         return (contact_positions - cj).flatten()
@@ -543,7 +550,7 @@ class HumanoidPlanner:
         beta = self.beta
         self.eq7k_friction_cone_constraints = []
         for k in range(self.N):
-            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            Fj = self.reshape_3d_contact(F[k])
             beta_k = np.reshape(beta[k], (self.num_contacts, self.N_d))
             for i in range(self.num_contacts):
                 beta_v = beta_k[i].dot(self.friction_cone_components[:,i,:])
@@ -595,52 +602,51 @@ class HumanoidPlanner:
         })
 
     def add_eq8a_constraints(self):
-        def eq8a_lhs(q, v, F, slack):
-            Fj = np.reshape(F, (self.num_contacts, 3))
-            return Fj[:,2].dot(self.get_contact_positions_z(q, v)) - slack # Constraint functions must output vectors
+        def eq8a_lhs(F, c, slack):
+            Fj = self.reshape_3d_contact(F)
+            cj = self.reshape_3d_contact(c)
+            return Fj[:,2].dot(cj[:,2]) - slack # Constraint functions must output vectors
 
-        q = self.q
-        v = self.v
         F = self.F
+        c = self.c
         slack = self.slack
         self.eq8a_constraints = []
         for k in range(self.N):
-            constraint = self.add_constraint(eq8a_lhs, q[k], v[k], F[k], slack[k])
+            constraint = self.add_constraint(eq8a_lhs, F[k], c[k], slack[k])
             constraint.evaluator().set_description(f"Eq(8a)[{k}]")
             self.eq8a_constraints.append(constraint)
 
-    def check_eq8a_constraints(self, q, v, F):
+    def check_eq8a_constraints(self, F, c, slack):
         return check_constraints(self.eq8a_constraints, {
-            "q": q,
-            "v": v,
-            "F": F
+            "F": F,
+            "c": c,
+            "slack": slack
         })
 
     def add_eq8b_constraints(self):
-        q = self.q
-        v = self.v
         tau = self.tau
+        c = self.c
         slack = self.slack
         self.eq8b_constraints = []
         for k in range(self.N):
             constraint = self.add_constraint(
-                    lambda q, v, tau, slack : (tau**2).T.dot(self.get_contact_positions_z(q, v)) - slack,
-                    q[k], v[k], tau[k], slack[k])
+                    lambda tau, c, slack : (tau**2).T.dot(self.reshape_3d_contact(c)[:,2]) - slack,
+                    tau[k], c[k], slack[k])
             constraint.evaluator().set_description(f"Eq(8b)[{k}]")
             self.eq8b_constraints.append(constraint)
 
-    def check_eq8b_constraints(self, q, v, tau):
+    def check_eq8b_constraints(self, tau, c, slack):
         return check_constraints(self.eq8b_constraints, {
-            "q": q,
-            "v": v,
-            "tau": tau
+            "tau": tau,
+            "c": c,
+            "slack": slack
         })
 
     def add_eq8c_contact_force_constraints(self):
         F = self.F
         self.eq8c_contact_force_constraints = []
         for k in range(self.N):
-            Fj = np.reshape(F[k], (self.num_contacts, 3))
+            Fj = self.reshape_3d_contact(F[k])
             constraint = self.prog.AddLinearConstraint(ge(Fj[:,2], 0.0))
             constraint.evaluator().set_description(f"Eq(8c)[{k}] contact force greater than zero")
             self.eq8c_contact_force_constraints.append(constraint)
@@ -651,8 +657,7 @@ class HumanoidPlanner:
         })
 
     def add_eq8c_contact_distance_constraints(self):
-        q = self.q
-        v = self.v
+        c = self.c
         self.eq8c_contact_distance_constraints = []
         for k in range(self.N):
             # TODO: Why can't this be converted to a linear / boundingbox constraint?
@@ -661,25 +666,24 @@ class HumanoidPlanner:
             # constraint = self.prog.AddConstraint(
                     # ge(self.get_contact_positions_z(q[k], v[k]), -MAX_GROUND_PENETRATION))
             constraint = self.add_constraint(
-                    lambda q, v : self.get_contact_positions_z(q, v),
-                    q[k], v[k],
+                    lambda c : self.reshape_3d_contact(c)[:,2],
+                    c[k],
                     lb=[-MAX_GROUND_PENETRATION] * self.num_contacts,
                     ub=[float('inf')] * self.num_contacts)
             constraint.evaluator().set_description(f"Eq(8c)[{k}] z position greater than zero")
             self.eq8c_contact_distance_constraints.append(constraint)
 
-    def check_eq8c_contact_distance_constraints(self, q, v):
+    def check_eq8c_contact_distance_constraints(self, c):
         return check_constraints(self.eq8c_contact_distance_constraints, {
-            "q": q,
-            "v": v
+            "c": c
         })
 
     def add_eq9a_constraints(self):
         ''' Assume flat ground for now... '''
         def eq9a_lhs(F, c, c_prev, i, slack):
-            Fj = np.reshape(F, (self.num_contacts, 3))
-            cj = np.reshape(c, (self.num_contacts, 3))
-            cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+            Fj = self.reshape_3d_contact(F)
+            cj = self.reshape_3d_contact(c)
+            cj_prev = self.reshape_3d_contact(c_prev)
             return Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) - slack
 
         F = self.F
@@ -704,17 +708,18 @@ class HumanoidPlanner:
                 contact_constraints.append(constraint)
             self.eq9a_constraints.append(contact_constraints)
 
-    def check_eq9a_constraints(self, F, c):
+    def check_eq9a_constraints(self, F, c, slack):
         return check_constraints(self.eq9a_constraints, {
             "F": F,
-            "c": c
+            "c": c,
+            "slack": slack
         })
 
     def add_eq9b_constraints(self):
         def eq9b_lhs(F, c, c_prev, i, slack):
-            Fj = np.reshape(F, (self.num_contacts, 3))
-            cj = np.reshape(c, (self.num_contacts, 3))
-            cj_prev = np.reshape(c_prev, (self.num_contacts, 3))
+            Fj = self.reshape_3d_contact(F)
+            cj = self.reshape_3d_contact(c)
+            cj_prev = self.reshape_3d_contact(c_prev)
             return Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) - slack
 
         F = self.F
@@ -735,10 +740,11 @@ class HumanoidPlanner:
                 contact_constraints.append(constraint)
             self.eq9b_constraints.append(contact_constraints)
 
-    def check_eq9b_constraints(self, F, c):
+    def check_eq9b_constraints(self, F, c, slack):
         return check_constraints(self.eq9b_constraints, {
             "F": F,
-            "c": c
+            "c": c,
+            "slack": slack
         })
 
     def add_slack_constraints(self):
