@@ -1001,10 +1001,10 @@ class HumanoidPlanner:
         self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
         self.add_eq7a_constraints()
-        # self.add_eq7b_constraints()
-        # self.add_eq7c_constraints()
+        self.add_eq7b_constraints()
+        self.add_eq7c_constraints()
         self.add_eq7d_constraints()
-        # self.add_eq7e_constraints()
+        self.add_eq7e_constraints()
         self.add_eq7f_constraints()
         self.add_eq7g_constraints()
         self.add_eq7h_constraints()
