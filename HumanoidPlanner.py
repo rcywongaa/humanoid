@@ -605,7 +605,7 @@ class HumanoidPlanner:
         slack = self.slack
         self.eq8a_constraints = []
         for k in range(self.N):
-            constraint = self.add_constraint(eq8a_lhs, q[k], v[k], F[k], slack)
+            constraint = self.add_constraint(eq8a_lhs, q[k], v[k], F[k], slack[k])
             constraint.evaluator().set_description(f"Eq(8a)[{k}]")
             self.eq8a_constraints.append(constraint)
 
@@ -625,7 +625,7 @@ class HumanoidPlanner:
         for k in range(self.N):
             constraint = self.add_constraint(
                     lambda q, v, tau, slack : (tau**2).T.dot(self.get_contact_positions_z(q, v)) - slack,
-                    q[k], v[k], tau[k], slack)
+                    q[k], v[k], tau[k], slack[k])
             constraint.evaluator().set_description(f"Eq(8b)[{k}]")
             self.eq8b_constraints.append(constraint)
 
@@ -698,7 +698,7 @@ class HumanoidPlanner:
 
                 constraint = self.add_constraint(
                         lambda F, c, cprev, slack, i=i : eq9a_lhs(F, c, cprev, i, slack),
-                        F[k], c[k], c[k-1], slack)
+                        F[k], c[k], c[k-1], slack[k])
                 constraint.evaluator().set_description("Eq(9a)[{k}][{i}]")
                 contact_constraints.append(constraint)
             self.eq9a_constraints.append(contact_constraints)
@@ -729,7 +729,7 @@ class HumanoidPlanner:
                 '''
                 constraint = self.add_constraint(
                         lambda F, c, cprev, slack, i=i : eq9b_lhs(F, c, cprev, i, slack),
-                        F[k], c[k], c[k-1], slack)
+                        F[k], c[k], c[k-1], slack[k])
                 constraint.evaluator().set_description("Eq(9b)[{k}][{i}]")
                 contact_constraints.append(constraint)
             self.eq9b_constraints.append(contact_constraints)
@@ -966,7 +966,7 @@ class HumanoidPlanner:
                     + rdd[k].dot(rdd[k])))[0])
 
     def add_slack_cost(self):
-        self.prog.AddCost(1e3*self.slack[0])
+        self.prog.AddCost(1e3*(self.slack.T@self.slack)[0,0])
 
     def create_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
         assert(max_time / num_knot_points > MIN_TIMESTEP)
@@ -994,7 +994,7 @@ class HumanoidPlanner:
         self.tau = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts, name="tau") # We assume only z torque exists
         self.h = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="h")
         self.hd = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="hd")
-        self.slack = self.prog.NewContinuousVariables(1, name="slack")
+        self.slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="slack")
 
         ''' Additional variables not explicitly stated '''
         # Friction cone scale
@@ -1095,7 +1095,7 @@ class HumanoidPlanner:
         F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
         self.prog.SetDecisionVariableValueInVector(self.F, F_guess, initial_guess)
 
-        slack_guess = [0.1]
+        slack_guess = [0.1] * self.N
         self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
 
         ''' Solve '''
@@ -1120,6 +1120,7 @@ class HumanoidPlanner:
         self.h_sol = result.GetSolution(self.h)
         self.hd_sol = result.GetSolution(self.hd)
         self.beta_sol = result.GetSolution(self.beta)
+        self.slack_sol = result.GetSolution(self.slack)
         if not result.is_success():
             print(result.GetInfeasibleConstraintNames(self.prog))
             pdb.set_trace()
