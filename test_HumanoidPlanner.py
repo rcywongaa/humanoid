@@ -38,6 +38,18 @@ def default_v(N = 0):
     else:
         return np.array([pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity] * N)
 
+def default_c(N = 0):
+    if N == 0:
+        return np.zeros(3*16)
+    else:
+        return np.zeros((N, 3*16))
+
+def default_slack(N=0):
+    if N == 0:
+        return np.zeros(1)
+    else:
+        return np.zeros((N, 1))
+
 class TestHumanoidPlannerStandalone(unittest.TestCase):
     def test_create_q_interpolation(self):
         plant = MultibodyPlant(mbp_time_step)
@@ -172,39 +184,39 @@ class TestHumanoidPlanner(unittest.TestCase):
         assert_autodiff_array_almost_equal(q_result_ad, q)
         assert_autodiff_array_almost_equal(v_result_ad, v)
 
-    def test_toTauj(self):
+    def test_reshape_tauj(self):
         tau_k = [i for i in range(16)]
-        tau_j = self.planner.toTauj(tau_k)
+        tau_j = self.planner.reshape_tauj(tau_k)
         tau_j_expected = np.array([[0.0, 0.0, i] for i in range(16)])
         np.testing.assert_array_almost_equal(tau_j, tau_j_expected)
 
     def test_get_contact_position(self):
         self.skipTest("Unimplemented")
 
-    def test_get_contact_positions_z(self):
-        pelvis_orientation = [1., 0., 0., 0.]
-        pelvis_position = [0., 0., 0.93845]
-        joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
-        q = np.array(pelvis_orientation + pelvis_position + joint_positions)
-        pelvis_rotational_velocity = [0., 0., 0.]
-        pelvis_linear_velocity = [0., 0., 0.]
-        joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
-        v = np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
-        contact_positions_z = self.planner.get_contact_positions_z(q, v)
-        expected_contact_positions_z = [0.] * Atlas.NUM_CONTACTS
-        np.testing.assert_allclose(contact_positions_z, expected_contact_positions_z, atol=epsilon)
+    # def test_get_contact_positions_z(self):
+        # pelvis_orientation = [1., 0., 0., 0.]
+        # pelvis_position = [0., 0., 0.93845]
+        # joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
+        # q = np.array(pelvis_orientation + pelvis_position + joint_positions)
+        # pelvis_rotational_velocity = [0., 0., 0.]
+        # pelvis_linear_velocity = [0., 0., 0.]
+        # joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
+        # v = np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
+        # contact_positions_z = self.planner.get_contact_positions_z(q, v)
+        # expected_contact_positions_z = [0.] * Atlas.NUM_CONTACTS
+        # np.testing.assert_allclose(contact_positions_z, expected_contact_positions_z, atol=epsilon)
 
-        pelvis_orientation = [1., 0., 0., 0.]
-        pelvis_position = [0., 0., 1.03845]
-        joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
-        q = np.array(pelvis_orientation + pelvis_position + joint_positions)
-        pelvis_rotational_velocity = [0., 0., 0.]
-        pelvis_linear_velocity = [0., 0., 0.]
-        joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
-        v = np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
-        contact_positions_z = self.planner.get_contact_positions_z(q, v)
-        expected_contact_positions_z = [0.1] * Atlas.NUM_CONTACTS
-        np.testing.assert_allclose(contact_positions_z, expected_contact_positions_z, atol=epsilon)
+        # pelvis_orientation = [1., 0., 0., 0.]
+        # pelvis_position = [0., 0., 1.03845]
+        # joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
+        # q = np.array(pelvis_orientation + pelvis_position + joint_positions)
+        # pelvis_rotational_velocity = [0., 0., 0.]
+        # pelvis_linear_velocity = [0., 0., 0.]
+        # joint_velocity = [0.] * Atlas.NUM_ACTUATED_DOF
+        # v = np.array(pelvis_rotational_velocity + pelvis_rotational_velocity + joint_velocity)
+        # contact_positions_z = self.planner.get_contact_positions_z(q, v)
+        # expected_contact_positions_z = [0.1] * Atlas.NUM_CONTACTS
+        # np.testing.assert_allclose(contact_positions_z, expected_contact_positions_z, atol=epsilon)
 
     def test_eq7a_constraints(self):
         N = 2
@@ -431,34 +443,42 @@ class TestHumanoidPlanner(unittest.TestCase):
     def test_eq8a_constraints(self):
         N = 2
         self.create_default_program(N)
-        q = default_q(N)
-        v = default_v(N)
         F = np.zeros((N, self.contact_dim))
-        self.assertTrue(self.planner.check_eq8a_constraints(q, v, F))
+        c = default_c(N)
+        slack = default_slack(N)
+        self.assertTrue(self.planner.check_eq8a_constraints(F, c, slack))
 
-        q[1][6] = 0.93845
-        F[1][11] = 10.0
-        self.assertTrue(self.planner.check_eq8a_constraints(q, v, F))
+        c[1][11*3+2] = 0.0
+        F[1][11*3+2] = 10.0
+        self.assertTrue(self.planner.check_eq8a_constraints(F, c, slack))
 
-        q[1][6] = 1.0
-        F[1][11] = 10.0
-        self.assertFalse(self.planner.check_eq8a_constraints(q, v, F))
+        c[1][10*3+2] = 1.0
+        F[1][11*3+2] = 10.0
+        self.assertTrue(self.planner.check_eq8a_constraints(F, c, slack))
+
+        c[1][11*3+2] = 1.0
+        F[1][11*3+2] = 10.0
+        self.assertFalse(self.planner.check_eq8a_constraints(F, c, slack))
 
     def test_eq8b_constraints(self):
         N = 2
         self.create_default_program(N)
-        q = default_q(N)
-        v = default_v(N)
+        c = default_c(N)
         tau = np.zeros((N, self.num_contacts))
-        self.assertTrue(self.planner.check_eq8b_constraints(q, v, tau))
+        slack = default_slack(N)
+        self.assertTrue(self.planner.check_eq8b_constraints(tau, c, slack))
 
-        q[0][6] = 0.93845
+        c[0][8*3+2] = 0.0
         tau[0][8] = -1.0
-        self.assertTrue(self.planner.check_eq8b_constraints(q, v, tau))
+        self.assertTrue(self.planner.check_eq8b_constraints(tau, c, slack))
 
-        q[0][6] = 1.0
+        c[0][9*3+2] = 0.0
         tau[0][8] = 1.0
-        self.assertFalse(self.planner.check_eq8b_constraints(q, v, tau))
+        self.assertTrue(self.planner.check_eq8b_constraints(tau, c, slack))
+
+        c[0][8*3+2] = 1.0
+        tau[0][8] = 1.0
+        self.assertFalse(self.planner.check_eq8b_constraints(tau, c, slack))
 
     def test_eq8c_contact_force_constraints(self):
         N = 2
@@ -479,20 +499,18 @@ class TestHumanoidPlanner(unittest.TestCase):
     def test_eq8c_contact_distance_constraint(self):
         N = 2
         self.create_default_program(N)
-        q = default_q(N)
-        v = default_v(N)
+        c = default_c(N)
+        self.assertTrue(self.planner.check_eq8c_contact_distance_constraints(c))
 
-        q[0][6] = 0.93845
-        q[1][6] = 0.93845
-        self.assertTrue(self.planner.check_eq8c_contact_distance_constraints(q, v))
+        c[1][3*2] = -1.0
+        c[1][3*2+1] = -1.0
+        c[1][3*2+2] = 0.1
+        self.assertTrue(self.planner.check_eq8c_contact_distance_constraints(c))
 
-        q[0][6] = 0.938
-        q[1][6] = 0.93845
-        self.assertFalse(self.planner.check_eq8c_contact_distance_constraints(q, v))
-
-        q[0][6] = 0.93845
-        q[1][6] = 0.938
-        self.assertFalse(self.planner.check_eq8c_contact_distance_constraints(q, v))
+        c[0][3*2] = -1.0
+        c[0][3*2+1] = -1.0
+        c[0][3*2+2] = -0.1
+        self.assertFalse(self.planner.check_eq8c_contact_distance_constraints(c))
 
     def test_eq9a_lhs(self):
         self.skipTest("Unimplemented")
@@ -502,7 +520,8 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.create_default_program(N)
         F = np.zeros((N, self.contact_dim))
         c = np.zeros((N, self.contact_dim))
-        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+        slack = default_slack(N)
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c, slack))
 
         ''' Allow contact point to move if contact force on another contact '''
         F = np.zeros((N, self.contact_dim))
@@ -510,7 +529,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.2 # 16th contact z
         c[0, 3*14] = 0.1 # 15th contact x
         c[1, 3*14] = 0.2 # 15th contact x
-        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c, slack))
 
         ''' Contact point should not move when applying contact force '''
         F = np.zeros((N, self.contact_dim))
@@ -518,7 +537,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.2 # 16th contact z
         c[0, 3*15] = 0.1 # 16th contact x
         c[1, 3*15] = 0.2 # 16th contact x
-        self.assertFalse(self.planner.check_eq9a_constraints(F, c))
+        self.assertFalse(self.planner.check_eq9a_constraints(F, c, slack))
 
         ''' Allow contact points to move if no contact force '''
         F = np.zeros((N, self.contact_dim))
@@ -526,7 +545,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.0 # 16th contact z
         c[0, 3*15] = 0.1 # 16th contact x
         c[1, 3*15] = 0.2 # 16th contact x
-        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c, slack))
 
         ''' This should not check for y axis slipping '''
         F = np.zeros((N, self.contact_dim))
@@ -534,7 +553,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.2 # 16th contact z
         c[0, 3*15+1] = 0.1 # 16th contact y
         c[1, 3*15+1] = 0.2 # 16th contact y
-        self.assertTrue(self.planner.check_eq9a_constraints(F, c))
+        self.assertTrue(self.planner.check_eq9a_constraints(F, c, slack))
 
     def test_eq9b_lhs(self):
         self.skipTest("Unimplemented")
@@ -544,7 +563,8 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.create_default_program(N)
         F = np.zeros((N, self.contact_dim))
         c = np.zeros((N, self.contact_dim))
-        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
+        slack = default_slack(N)
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c, slack))
 
         ''' Allow contact point to move if contact force on another contact '''
         F = np.zeros((N, self.contact_dim))
@@ -552,7 +572,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.2 # 16th contact z
         c[0, 3*14+1] = 0.1 # 15th contact y
         c[1, 3*14+1] = 0.2 # 15th contact y
-        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c, slack))
 
         ''' Contact point should not move when applying contact force '''
         F = np.zeros((N, self.contact_dim))
@@ -560,7 +580,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.2 # 16th contact z
         c[0, 3*15+1] = 0.1 # 16th contact y
         c[1, 3*15+1] = 0.2 # 16th contact y
-        self.assertFalse(self.planner.check_eq9b_constraints(F, c))
+        self.assertFalse(self.planner.check_eq9b_constraints(F, c, slack))
 
         ''' Allow contact points to move if no contact force '''
         F = np.zeros((N, self.contact_dim))
@@ -568,7 +588,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.0 # 16th contact x
         c[0, 3*15+1] = 0.1 # 16th contact y
         c[1, 3*15+1] = 0.2 # 16th contact y
-        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c, slack))
 
         ''' This should not check for x axis slipping '''
         F = np.zeros((N, self.contact_dim))
@@ -576,7 +596,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         F[1][3*15 + 2] = 0.2 # 16th contact z
         c[0, 3*15] = 0.1 # 16th contact x
         c[1, 3*15] = 0.2 # 16th contact x
-        self.assertTrue(self.planner.check_eq9b_constraints(F, c))
+        self.assertTrue(self.planner.check_eq9b_constraints(F, c, slack))
 
     def test_pose_error_cost(self):
         self.skipTest("Unimplemented")
