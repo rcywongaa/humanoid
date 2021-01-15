@@ -9,7 +9,7 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 from Atlas import load_atlas, set_atlas_initial_pose
 from Atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from Atlas import Atlas
-from pydrake.all import Quaternion
+from pydrake.all import Quaternion, AddUnitQuaternionConstraintOnPlant
 from pydrake.all import Multiplexer
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource
 from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
@@ -878,10 +878,9 @@ class HumanoidPlanner:
         q = self.q
         self.unit_quaternion_constraints = []
         for k in range(self.N):
-            quaternion = q[k][0:4]
-            constraint = self.prog.AddConstraint(lambda x : [x @ x], lb=[1], ub=[1], vars=quaternion)
-            constraint.evaluator().set_description(f"unit quaternion constraint[{k}]")
-            self.unit_quaternion_constraints.append(constraint)
+            AddUnitQuaternionConstraintOnPlant(self.plant_float, q[k], self.prog)
+            # constraint.evaluator().set_description(f"unit quaternion constraint[{k}]")
+            # self.unit_quaternion_constraints.append(constraint)
 
     def check_unit_quaternion_constraints(self, q):
         return check_constraints(self.unit_quaternion_constraints, {
