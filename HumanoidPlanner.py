@@ -743,6 +743,9 @@ class HumanoidPlanner:
     def add_slack_constraints(self):
         self.prog.AddConstraint(ge(self.slack, 0))
 
+    def add_contact_sequence_constraint(self):
+        pass
+
     def add_initial_pose_constraints(self):
         q = self.q
         self.initial_pose_constraints = []
@@ -993,7 +996,6 @@ class HumanoidPlanner:
         self.tau = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts, name="tau") # We assume only z torque exists
         self.h = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="h")
         self.hd = self.prog.NewContinuousVariables(rows=self.N, cols=3, name="hd")
-        self.slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="slack")
 
         ''' Additional variables not explicitly stated '''
         # Friction cone scale
@@ -1015,6 +1017,7 @@ class HumanoidPlanner:
         self.add_eq7k_beta_positive_constraints()
         self.add_eq7k_torque_constraints()
         if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+            self.slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="slack")
             self.add_eq8a_constraints()
             self.add_eq8b_constraints()
             self.add_eq8c_contact_force_constraints()
@@ -1023,6 +1026,8 @@ class HumanoidPlanner:
             self.add_eq9b_constraints()
             self.add_slack_constraints()
             self.add_slack_cost()
+        else:
+            self.add_contact_sequence_constraint()
 
         self.add_eq10_cost()
 
