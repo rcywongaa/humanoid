@@ -1141,8 +1141,9 @@ class HumanoidPlanner:
         F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
         self.prog.SetDecisionVariableValueInVector(self.F, F_guess, initial_guess)
 
-        slack_guess = [0.1] * self.N
-        self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
+        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+            slack_guess = [0.1] * self.N
+            self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
 
         ''' Solve '''
         solver = SnoptSolver()
@@ -1166,7 +1167,8 @@ class HumanoidPlanner:
         self.h_sol = result.GetSolution(self.h)
         self.hd_sol = result.GetSolution(self.hd)
         self.beta_sol = result.GetSolution(self.beta)
-        self.slack_sol = result.GetSolution(self.slack)
+        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
+            self.slack_sol = result.GetSolution(self.slack)
         if not result.is_success():
             print(result.GetInfeasibleConstraintNames(self.prog))
             pdb.set_trace()
