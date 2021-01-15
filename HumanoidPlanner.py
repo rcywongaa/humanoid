@@ -656,9 +656,10 @@ class HumanoidPlanner:
         self.eq8c_contact_distance_constraints = []
         for k in range(self.N):
             # TODO: Why can't this be converted to a linear / boundingbox constraint?
+
+            # This doesn't work due to mixing of autodiff plant and Variable
             # constraint = self.prog.AddConstraint(
                     # ge(self.get_contact_positions_z(q[k], v[k]), -MAX_GROUND_PENETRATION))
-
             constraint = self.add_constraint(
                     lambda q, v : self.get_contact_positions_z(q, v),
                     q[k], v[k],
