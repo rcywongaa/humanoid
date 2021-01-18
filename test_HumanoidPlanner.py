@@ -152,7 +152,8 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[6] = 0.93 # z position of pelvis (to make sure final pose touches ground)
         num_knot_points = N
         max_time = 0.02
-        self.planner.create_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
+        # TODO: Use create_minimal_program instead
+        self.planner.create_full_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
 
     def test_getPlantAndContext_float(self):
         pelvis_orientation = [1., 0., 0., 0.]
@@ -634,6 +635,9 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.create_default_program()
         ''' Test all constraints satisfied '''
         self.assertTrue(self.planner.check_all_constraints(q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta))
+
+    def test_0th_order(self):
+        self.planner.create_minimal_program(50, 1)
 
 if __name__ == "__main__":
     unittest.main()
