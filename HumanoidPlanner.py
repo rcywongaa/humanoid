@@ -788,7 +788,8 @@ class HumanoidPlanner:
                 double_stance_constraint.evaluator().set_description(f"double stance 3")
                 self.contact_sequence_constraints.append(double_stance_constraint)
 
-    def add_initial_pose_constraints(self):
+    def add_initial_pose_constraints(self, q_init):
+        self.q_init = q_init
         q = self.q
         self.initial_pose_constraints = []
         constraint = self.prog.AddLinearConstraint(eq(q[0], self.q_init))
@@ -812,10 +813,11 @@ class HumanoidPlanner:
             "v": v
         })
 
-    def add_final_pose_constraints(self):
+    def add_final_pose_constraints(self, q_final, pelvis_only):
+        self.q_final = q_final
         q = self.q
         self.final_pose_constraints = []
-        if self.pelvis_only:
+        if pelvis_only:
             constraint = self.prog.AddLinearConstraint(eq(q[-1, 0:7], self.q_final[0:7]))
             constraint.evaluator().set_description("final pose")
         else:
@@ -864,7 +866,8 @@ class HumanoidPlanner:
             "rdd": rdd
         })
 
-    def add_max_time_constraints(self):
+    def add_max_time_constraints(self, max_time):
+        self.T = max_time
         dt = self.dt
         self.max_time_constraints = []
         constraint = self.prog.AddLinearConstraint(np.sum(dt) == self.T)
@@ -1012,14 +1015,10 @@ class HumanoidPlanner:
     def add_slack_cost(self):
         self.prog.AddCost(1e3*(self.slack.T@self.slack)[0,0])
 
-    def create_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=False):
+    def create_minimal_program(self, num_knot_points, max_time):
         assert(max_time / num_knot_points > MIN_TIMESTEP)
         assert(max_time / num_knot_points < MAX_TIMESTEP)
-        self.q_init = q_init
-        self.q_final = q_final
-        self.pelvis_only = pelvis_only
         self.N = num_knot_points
-        self.T = max_time
 
         self.prog = MathematicalProgram()
         self.q = self.prog.NewContinuousVariables(rows=self.N, cols=self.plant_float.num_positions(), name="q")
@@ -1043,6 +1042,25 @@ class HumanoidPlanner:
         # Friction cone scale
         self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
+        ''' These constraints were not explicitly stated in the paper'''
+        self.add_max_time_constraints(max_time)
+        self.add_timestep_constraints()
+
+    def add_0th_order_constraints(self, q_init, q_final, pelvis_only):
+        ''' These constraints were not explicitly stated in the paper'''
+        self.add_initial_pose_constraints(q_init)
+        self.add_initial_velocity_constraints()
+        self.add_final_pose_constraints(q_final, pelvis_only)
+        self.add_final_velocity_constraints()
+        self.add_final_COM_velocity_constraints()
+        self.add_final_COM_acceleration_constraints()
+        self.add_joint_acceleration_constraints()
+        self.add_unit_quaternion_constraints()
+        self.add_angular_velocity_constraints()
+        self.add_unit_axis_constraint()
+
+    def create_full_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=True):
+        self.create_minimal_program(num_knot_points, max_time)
         self.add_eq7a_constraints()
         self.add_eq7b_constraints()
         self.add_eq7c_constraints()
@@ -1073,19 +1091,7 @@ class HumanoidPlanner:
 
         self.add_eq10_cost()
 
-        ''' Additional constraints not explicitly stated '''
-        self.add_initial_pose_constraints()
-        self.add_initial_velocity_constraints()
-        self.add_final_pose_constraints()
-        self.add_final_velocity_constraints()
-        self.add_final_COM_velocity_constraints()
-        self.add_final_COM_acceleration_constraints()
-        self.add_max_time_constraints()
-        self.add_timestep_constraints()
-        self.add_joint_acceleration_constraints()
-        self.add_unit_quaternion_constraints()
-        self.add_angular_velocity_constraints()
-        self.add_unit_axis_constraint()
+        self.add_0th_order_constraints(q_init, q_final, pelvis_only)
 
         '''
         Constrain unbounded variables to improve IPOPT performance
@@ -1199,7 +1205,7 @@ def main():
     planner = HumanoidPlanner(plant, Atlas.CONTACTS_PER_FRAME, q_nom)
     if not PLAYBACK_ONLY:
         print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
-        planner.create_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
+        planner.create_full_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
         r_traj, rd_traj, rdd_traj, q_traj, v_traj, dt_traj = planner.solve()
 
         with open(export_filename, 'wb') as f:
