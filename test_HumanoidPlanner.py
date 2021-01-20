@@ -1,11 +1,13 @@
 from HumanoidPlanner import HumanoidPlanner
 from HumanoidPlanner import create_q_interpolation, create_r_interpolation, apply_angular_velocity_to_quaternion
 from HumanoidPlanner import create_constraint_input_array
-from pydrake.all import MathematicalProgram, le, ge, eq
+from pydrake.all import DiagramBuilder, AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
+from pydrake.all import Quaternion, RollPitchYaw
 import numpy as np
-from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getActuatorIndex
+from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getActuatorIndex, set_null_input
 import unittest
 import pdb
+import time
 
 from pydrake.all import MultibodyPlant
 from pydrake.autodiffutils import initializeAutoDiff
@@ -15,6 +17,33 @@ g_vec = np.array([0, 0, -g])
 
 mbp_time_step = 1.0e-3
 epsilon = 1e-5
+
+def visualize(q, dt=None):
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
+    load_atlas(plant, add_ground=True)
+    plant_context = plant.CreateDefaultContext()
+    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
+    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
+    diagram = builder.Build()
+
+    if len(q.shape) == 1:
+        q = np.reshape(q, (1, -1))
+
+    for i in range(q.shape[0]):
+        print(f"knot point: {i}")
+        diagram_context = diagram.CreateDefaultContext()
+        plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
+        set_null_input(plant, plant_context)
+
+        plant.SetPositions(plant_context, q[i])
+        simulator = Simulator(diagram, diagram_context)
+        simulator.set_target_realtime_rate(0.0)
+        simulator.AdvanceTo(0)
+        if not dt is None:
+            time.sleep(5/(np.sum(dt))*dt[i])
+        else:
+            time.sleep(0.5)
 
 def assert_autodiff_array_almost_equal(autodiff_array, float_array):
     float_array = np.array([i.value() for i in autodiff_array])
@@ -629,15 +658,67 @@ class TestHumanoidPlanner(unittest.TestCase):
             q[i][6] = 0.93845 # z of pelvis
             # r[i] = self.planner.calc_r(q[i], v[i])
             # TODO
-            # c[i] = 
+            # c[i] = ...
             F[i] = np.array([0., 0., Atlas.M*g / 16] * 16)
 
         self.create_default_program()
         ''' Test all constraints satisfied '''
         self.assertTrue(self.planner.check_all_constraints(q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta))
 
-    def test_0th_order(self):
+    def test_minimal(self):
         self.planner.create_minimal_program(50, 1)
+        self.planner.solve(guess=False)
+        self.assertTrue(self.planner.is_success)
+
+    def test_0th_order(self):
+        N = 50
+        self.planner.create_minimal_program(N, 1)
+        q_init = default_q()
+        q_init[6] = 1.5 # z position of pelvis
+        q_final = default_q()
+        q_final[0:4] = Quaternion(RollPitchYaw([2*np.pi, np.pi, np.pi/2]).ToRotationMatrix().matrix()).wxyz()
+        q_final[4] = 1.0 # x position of pelvis
+        q_final[6] = 2.0 # z position of pelvis
+        q_final[15] = np.pi/4 # right hip joint swing back
+        self.planner.add_0th_order_constraints(q_init, q_final, False)
+        self.planner.solve(guess=True)
+        self.assertTrue(self.planner.is_success)
+        visualize(self.planner.q_sol)
+
+    def test_1st_order(self):
+        N = 20
+        self.planner.create_minimal_program(N, 0.5)
+        q_init = default_q()
+        q_init[6] = 1.5 # z position of pelvis
+        q_final = default_q()
+        q_final[0:4] = Quaternion(RollPitchYaw([2*np.pi, np.pi, np.pi/2]).ToRotationMatrix().matrix()).wxyz()
+        q_final[4] = 1.0 # x position of pelvis
+        q_final[6] = 2.0 # z position of pelvis
+        q_final[15] = np.pi/4 # right hip joint swing back
+        self.planner.add_0th_order_constraints(q_init, q_final, False)
+        self.planner.add_1st_order_constraints()
+        self.planner.add_eq10_cost()
+        self.planner.solve(guess=True)
+        self.assertTrue(self.planner.is_success)
+        # visualize(self.planner.q_sol)
+
+    def test_2nd_order(self):
+        N = 20
+        self.planner.create_minimal_program(N, 0.5)
+        q_init = default_q()
+        q_init[6] = 1.5 # z position of pelvis
+        q_final = default_q()
+        q_final[0:4] = Quaternion(RollPitchYaw([2*np.pi, np.pi, np.pi/2]).ToRotationMatrix().matrix()).wxyz()
+        q_final[4] = 1.0 # x position of pelvis
+        q_final[6] = 2.0 # z position of pelvis
+        q_final[15] = np.pi/4 # right hip joint swing back
+        self.planner.add_0th_order_constraints(q_init, q_final, False)
+        self.planner.add_1st_order_constraints()
+        # self.planner.add_2nd_order_constraints()
+        # self.planner.add_eq7b_constraints()
+        self.planner.add_eq10_cost()
+        self.planner.solve(guess=True)
+        self.assertTrue(self.planner.is_success)
 
 if __name__ == "__main__":
     unittest.main()
