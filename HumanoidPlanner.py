@@ -12,8 +12,8 @@ from Atlas import Atlas
 from pydrake.all import Quaternion, AddUnitQuaternionConstraintOnPlant
 from pydrake.all import Multiplexer
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource
-from pydrake.all import ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
-from pydrake.all import DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, BasicVector, LeafSystem
+from pydrake.all import AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
+from pydrake.all import DiagramBuilder, MultibodyPlant, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, eq, le, ge, SolverOptions
 # from pydrake.all import IpoptSolver
 from pydrake.all import SnoptSolver
@@ -1042,6 +1042,9 @@ class HumanoidPlanner:
         # Friction cone scale
         self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
+        ''' Complementarity constraints '''
+        self.slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="slack")
+
         ''' These constraints were not explicitly stated in the paper'''
         self.add_max_time_constraints(max_time)
         self.add_timestep_constraints()
@@ -1059,15 +1062,6 @@ class HumanoidPlanner:
         self.add_angular_velocity_constraints()
         self.add_unit_axis_constraint()
 
-    def create_full_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=True):
-        self.create_minimal_program(num_knot_points, max_time)
-        self.add_eq7a_constraints()
-        self.add_eq7b_constraints()
-        self.add_eq7c_constraints()
-        self.add_eq7d_constraints()
-        self.add_eq7e_constraints()
-        self.add_eq7f_constraints()
-        self.add_eq7g_constraints()
         self.add_eq7h_constraints()
         self.add_eq7i_constraints()
         self.add_eq7j_constraints()
@@ -1076,22 +1070,40 @@ class HumanoidPlanner:
         self.add_eq7k_friction_cone_constraints()
         self.add_eq7k_beta_positive_constraints()
         self.add_eq7k_torque_constraints()
+
+    def add_1st_order_constraints(self):
+        self.add_eq7c_constraints()
+        self.add_eq7d_constraints()
+        self.add_eq7e_constraints()
+        self.add_eq7f_constraints()
+
+    def add_2nd_order_constraints(self):
+        self.add_eq7a_constraints()
+        self.add_eq7b_constraints()
+        self.add_eq7g_constraints()
+
+    def add_complementarity_constraints(self):
+        self.add_eq8a_constraints()
+        self.add_eq8b_constraints()
+        self.add_eq8c_contact_force_constraints()
+        self.add_eq8c_contact_distance_constraints()
+        self.add_eq9a_constraints()
+        self.add_eq9b_constraints()
+        self.add_slack_constraints()
+        self.add_slack_cost()
+
+    def create_full_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=True):
+        self.create_minimal_program(num_knot_points, max_time)
+        self.add_0th_order_constraints(q_init, q_final, pelvis_only)
+        self.add_1st_order_constraints()
+        self.add_2nd_order_constraints()
+
         if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
-            self.slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="slack")
-            self.add_eq8a_constraints()
-            self.add_eq8b_constraints()
-            self.add_eq8c_contact_force_constraints()
-            self.add_eq8c_contact_distance_constraints()
-            self.add_eq9a_constraints()
-            self.add_eq9b_constraints()
-            self.add_slack_constraints()
-            self.add_slack_cost()
+            self.add_complementarity_constraints()
         else:
             self.add_contact_sequence_constraint()
 
         self.add_eq10_cost()
-
-        self.add_0th_order_constraints(q_init, q_final, pelvis_only)
 
         '''
         Constrain unbounded variables to improve IPOPT performance
@@ -1104,7 +1116,7 @@ class HumanoidPlanner:
         # (self.prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
                 # .evaluator().set_description("max beta"))
 
-    def solve(self):
+    def guess(self):
         ''' Guess '''
         initial_guess = np.empty(self.prog.num_vars())
         dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
@@ -1147,9 +1159,15 @@ class HumanoidPlanner:
         F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
         self.prog.SetDecisionVariableValueInVector(self.F, F_guess, initial_guess)
 
-        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
-            slack_guess = [0.1] * self.N
-            self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
+        slack_guess = [0.1] * self.N
+        self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
+        return initial_guess
+
+    def solve(self, guess=True):
+        if guess:
+            initial_guess = self.guess()
+        else:
+            initial_guess = None
 
         ''' Solve '''
         solver = SnoptSolver()
@@ -1161,6 +1179,7 @@ class HumanoidPlanner:
         print(f"Start solving...")
         result = solver.Solve(self.prog, initial_guess, options) # Currently takes around 30 mins
         print(f"Success: {result.is_success()}  Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
+        self.is_success = result.is_success()
         self.q_sol = result.GetSolution(self.q)
         self.v_sol = result.GetSolution(self.v)
         self.dt_sol = result.GetSolution(self.dt)
@@ -1173,8 +1192,8 @@ class HumanoidPlanner:
         self.h_sol = result.GetSolution(self.h)
         self.hd_sol = result.GetSolution(self.hd)
         self.beta_sol = result.GetSolution(self.beta)
-        if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
-            self.slack_sol = result.GetSolution(self.slack)
+        self.slack_sol = result.GetSolution(self.slack)
+
         if not result.is_success():
             print(result.GetInfeasibleConstraintNames(self.prog))
             pdb.set_trace()
