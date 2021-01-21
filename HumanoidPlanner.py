@@ -333,15 +333,15 @@ class HumanoidPlanner:
             self.plant_float.num_positions() + self.plant_float.num_positions() + 3,
             self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1,
             self.plant_float.num_positions() + self.plant_float.num_positions() + 3 + 1 + self.plant_float.num_velocities()])
-        plant, context = self.getPlantAndContext(q, v)
-        qd = plant.MapVelocityToQDot(context, v*dt[0])
+        # plant, context = self.getPlantAndContext(q, v)
+        # qd = plant.MapVelocityToQDot(context, v*dt[0])
         # return q - qprev - qd
         '''
         As advised in
         https://stackoverflow.com/a/63510131/3177701
         '''
         ret_quat = q[0:4] - apply_angular_velocity_to_quaternion(qprev[0:4], w_axis, w_mag, dt[0])
-        ret_linear = (q - qprev - qd)[4:]
+        ret_linear = (q - qprev)[4:] - v[3:]*dt[0]
         ret = np.hstack([ret_quat, ret_linear])
         return ret
 
@@ -1072,7 +1072,7 @@ class HumanoidPlanner:
         self.add_eq7k_torque_constraints()
 
     def add_1st_order_constraints(self):
-        self.add_eq7c_constraints()
+        # self.add_eq7c_constraints()
         self.add_eq7d_constraints()
         self.add_eq7e_constraints()
         self.add_eq7f_constraints()
@@ -1133,6 +1133,8 @@ class HumanoidPlanner:
 
         w_axis_guess = np.array([[0.0, 0.0, 1.0]] * self.N)
         self.prog.SetDecisionVariableValueInVector(self.w_axis, w_axis_guess, initial_guess)
+        w_mag_guess = np.array([[0.0]] * self.N)
+        self.prog.SetDecisionVariableValueInVector(self.w_mag, w_mag_guess, initial_guess)
 
         v_traj_guess = position_traj_guess.MakeDerivative()
         w_traj_guess = quat_traj_guess.MakeDerivative()
@@ -1151,9 +1153,21 @@ class HumanoidPlanner:
             self.calc_r(q_guess[i], v_guess[i]) for i in range(self.N)])
         self.prog.SetDecisionVariableValueInVector(self.r, r_guess, initial_guess)
 
+        rd_guess_list = [[0, 0, 0]]
+        for i in range(1, self.N):
+            rd_guess_list += [(r_guess[i] - r_guess[i-1])*2/dt_guess[i] - rd_guess_list[i-1]]
+        rd_guess = np.array(rd_guess_list)
+        self.prog.SetDecisionVariableValueInVector(self.rd, rd_guess, initial_guess)
+
+        rdd_guess = np.array([[0, 0, 0]] + [(rd_guess[i] - rd_guess[i-1])/dt_guess[i] for i in range(1, self.N)])
+        self.prog.SetDecisionVariableValueInVector(self.rdd, rdd_guess, initial_guess)
+
         h_guess = np.array([
             self.calc_h(q_guess[i], v_guess[i]) for i in range(self.N)])
         self.prog.SetDecisionVariableValueInVector(self.h, h_guess, initial_guess)
+
+        hd_guess = np.array([[0,0,0]] + [(h_guess[i] - h_guess[i-1])/dt_guess[i] for i in range(1, self.N)])
+        self.prog.SetDecisionVariableValueInVector(self.hd, hd_guess, initial_guess)
 
         F_guess = np.zeros((self.N, self.contact_dim))
         F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
@@ -1213,11 +1227,11 @@ def main():
     q_init = q_nom.copy()
     q_init[6] = 0.93846 # Avoid initializing with ground penetration
     q_final = q_init.copy()
-    q_final[4] = 0.0 # x position of pelvis
+    q_final[4] = 0.3 # x position of pelvis
     q_final[6] = 0.93845 # z position of pelvis (to make sure final pose touches ground)
 
     num_knot_points = 50
-    max_time = 0.5
+    max_time = 1.0
 
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
