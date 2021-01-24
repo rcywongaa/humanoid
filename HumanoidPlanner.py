@@ -98,6 +98,7 @@ def create_constraint_input_array(constraint, name_value_map):
     ret.fill(np.nan)
     for name, value in name_value_map.items():
         if isinstance(value, Iterable):
+            value = np.array(value)
             # pydrake treats 2D arrays with 1 col / 1 row as 1D array
             if any(np.array(value.shape) == 1):
                 value = value.flatten()
@@ -1122,19 +1123,12 @@ class HumanoidPlanner:
         dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
         self.prog.SetDecisionVariableValueInVector(self.dt, dt_guess, initial_guess)
         # Guess q to avoid initializing with invalid quaternion
-        quat_traj_guess = PiecewiseQuaternionSlerp()
-        quat_traj_guess.Append(0, Quaternion(self.q_init[0:4]))
-        quat_traj_guess.Append(self.T, Quaternion(self.q_final[0:4]))
+        quat_traj_guess = PiecewiseQuaternionSlerp(breaks=[0, self.T], quaternions=[Quaternion(self.q_init[0:4]), Quaternion(self.q_final[0:4])])
         position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([self.q_init[4:], self.q_final[4:]]).T)
         q_guess = np.array([np.hstack([
             Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
         self.prog.SetDecisionVariableValueInVector(self.q, q_guess, initial_guess)
-
-        w_axis_guess = np.array([[0.0, 0.0, 1.0]] * self.N)
-        self.prog.SetDecisionVariableValueInVector(self.w_axis, w_axis_guess, initial_guess)
-        w_mag_guess = np.array([[0.0]] * self.N)
-        self.prog.SetDecisionVariableValueInVector(self.w_mag, w_mag_guess, initial_guess)
 
         v_traj_guess = position_traj_guess.MakeDerivative()
         w_traj_guess = quat_traj_guess.MakeDerivative()
@@ -1142,6 +1136,13 @@ class HumanoidPlanner:
             np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
         self.prog.SetDecisionVariableValueInVector(self.v, v_guess, initial_guess)
+
+        w_mag_guess = np.array([np.linalg.norm(v_guess[k][0:3]) for k in range(self.N)])
+        self.prog.SetDecisionVariableValueInVector(self.w_mag, w_mag_guess, initial_guess)
+        w_axis_guess = np.array([v_guess[k][0:3] / w_mag_guess[k] for k in range(self.N)])
+        self.prog.SetDecisionVariableValueInVector(self.w_axis, w_axis_guess, initial_guess)
+
+        assert(self.check_eq7d_constraints(q_guess, w_axis_guess, w_mag_guess, v_guess, dt_guess))
 
         c_guess = np.array([
             self.get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(self.N)])
@@ -1196,6 +1197,8 @@ class HumanoidPlanner:
         self.is_success = result.is_success()
         self.q_sol = result.GetSolution(self.q)
         self.v_sol = result.GetSolution(self.v)
+        self.w_axis_sol = result.GetSolution(self.w_axis)
+        self.w_mag_sol = result.GetSolution(self.w_mag)
         self.dt_sol = result.GetSolution(self.dt)
         self.r_sol = result.GetSolution(self.r)
         self.rd_sol = result.GetSolution(self.rd)
