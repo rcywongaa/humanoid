@@ -2,6 +2,7 @@ from HumanoidPlanner import HumanoidPlanner
 from HumanoidPlanner import create_q_interpolation, create_r_interpolation, apply_angular_velocity_to_quaternion
 from HumanoidPlanner import create_constraint_input_array
 from pydrake.all import DiagramBuilder, AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
+from pydrake.all import MathematicalProgram
 from pydrake.all import Quaternion, RollPitchYaw
 import numpy as np
 from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getActuatorIndex, set_null_input
