@@ -966,6 +966,20 @@ class HumanoidPlanner:
             "w_axis": w_axis
         })
 
+    # Since Euler integration only starts at k = 1, we set dt, v, hd, rd, rdd = 0 for k = 0
+    def add_first_timestep_constraints(self):
+        self.first_timestep_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(self.v[0], 0.0))
+        self.first_timestep_constraints.append(constraint)
+        constraint = self.prog.AddLinearConstraint(eq(self.w_mag[0], 0.0))
+        self.first_timestep_constraints.append(constraint)
+        constraint = self.prog.AddLinearConstraint(eq(self.hd[0], 0.0))
+        self.first_timestep_constraints.append(constraint)
+        constraint = self.prog.AddLinearConstraint(eq(self.rd[0], 0.0))
+        self.first_timestep_constraints.append(constraint)
+        constraint = self.prog.AddLinearConstraint(eq(self.rdd[0], 0.0))
+        self.first_timestep_constraints.append(constraint)
+
     def check_all_constraints(self, q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
         return (self.check_eq7a_constraints(F, rdd)
                 and self.check_eq7b_constraints(F, c, tau, hd, r)
@@ -1043,12 +1057,13 @@ class HumanoidPlanner:
         # Friction cone scale
         self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
-        ''' Complementarity constraints '''
+        ''' Slack for complementarity constraints '''
         self.slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="slack")
 
         ''' These constraints were not explicitly stated in the paper'''
         self.add_max_time_constraints(max_time)
         self.add_timestep_constraints()
+        self.add_first_timestep_constraints()
 
     def add_0th_order_constraints(self, q_init, q_final, pelvis_only):
         ''' These constraints were not explicitly stated in the paper'''
