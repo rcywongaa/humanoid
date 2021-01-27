@@ -9,7 +9,7 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 from Atlas import load_atlas, set_atlas_initial_pose
 from Atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
 from Atlas import Atlas
-from pydrake.all import Quaternion, AddUnitQuaternionConstraintOnPlant
+from pydrake.all import Quaternion, AddUnitQuaternionConstraintOnPlant, RotationMatrix
 from pydrake.all import Multiplexer
 from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource
 from pydrake.all import AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
@@ -1147,7 +1147,9 @@ class HumanoidPlanner:
         quat_traj_guess = PiecewiseQuaternionSlerp(breaks=[0, self.T], quaternions=[Quaternion(self.q_init[0:4]), Quaternion(self.q_final[0:4])])
         position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([self.q_init[4:], self.q_final[4:]]).T)
         q_guess = np.array([np.hstack([
-            Quaternion(quat_traj_guess.value(t)).wxyz(), position_traj_guess.value(t).flatten()])
+            # We cannot use Quaternion(quat_traj_guess.value(t)).wxyz()
+            # See https://github.com/RobotLocomotion/drake/issues/14561
+            RotationMatrix(quat_traj_guess.value(t)).ToQuaternion().wxyz(), position_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
         self.prog.SetDecisionVariableValueInVector(self.q, q_guess, initial_guess)
 
