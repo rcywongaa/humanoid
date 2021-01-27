@@ -867,6 +867,13 @@ class HumanoidPlanner:
             "rdd": rdd
         })
 
+    def add_final_centroidal_angular_momentum_constraints(self):
+        hd = self.hdd
+        self.final_centroidal_angular_momentum_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(hd[-1], 0.0))
+        constraint.evaluator().set_description("final centroidal angular momentum")
+        self.final_centroidal_angular_momentum_constraints.append(constraint)
+
     def add_max_time_constraints(self, max_time):
         self.T = max_time
         dt = self.dt
@@ -1114,6 +1121,7 @@ class HumanoidPlanner:
         self.add_final_velocity_constraints()
         self.add_final_COM_velocity_constraints()
         self.add_final_COM_acceleration_constraints()
+        self.add_final_centroidal_angular_momentum_constraints()
         self.add_joint_acceleration_constraints()
         self.add_unit_quaternion_constraints()
         self.add_angular_velocity_constraints()
