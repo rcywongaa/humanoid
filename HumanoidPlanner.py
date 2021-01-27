@@ -1208,8 +1208,6 @@ class HumanoidPlanner:
         w_axis_guess = np.array([v_guess[k][0:3] / w_mag_guess[k] for k in range(self.N)])
         self.prog.SetDecisionVariableValueInVector(self.w_axis, w_axis_guess, initial_guess)
 
-        assert(self.check_eq7d_constraints(q_guess, w_axis_guess, w_mag_guess, v_guess, dt_guess))
-
         c_guess = np.array([
             self.get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(self.N)])
         for i in range(self.N):
@@ -1242,6 +1240,18 @@ class HumanoidPlanner:
 
         slack_guess = [0.1] * self.N
         self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
+
+        # TODO: beta_guess
+        beta_guess = 0.001 * np.ones(self.beta.shape)
+        # TODO: tau_guess
+        tau_guess = 0.01 * np.ones(self.tau.shape)
+
+        print("Initial guess violates the following constraints:")
+        self.check_all_constraints(
+            q_guess, w_axis_guess, w_mag_guess, v_guess, dt_guess,
+            r_guess, rd_guess, rdd_guess,
+            c_guess, F_guess, tau_guess, h_guess, hd_guess, beta_guess)
+
         return initial_guess
 
     def solve(self, guess=True):
