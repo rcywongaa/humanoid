@@ -1066,6 +1066,12 @@ class HumanoidPlanner:
         self.add_first_timestep_constraints()
 
     def add_0th_order_constraints(self, q_init, q_final, pelvis_only):
+
+        # Make sure real part of q_init quaternion and q_final quaternion have same sign
+        # Should help avoid dealing with the fact that q and -q represent the same quaternions
+        if (q_init[0] >= 0) != (q_final[0] >= 0):
+            q_final[0:4] = -q_final[0:4]
+
         ''' These constraints were not explicitly stated in the paper'''
         self.add_initial_pose_constraints(q_init)
         self.add_initial_velocity_constraints()
