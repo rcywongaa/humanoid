@@ -993,9 +993,13 @@ class HumanoidPlanner:
     # Since Euler integration only starts at k = 1, we set dt, v, hd, rd, rdd = 0 for k = 0
     def add_first_timestep_constraints(self):
         self.first_timestep_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(self.dt[0], 0.0))
+        self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.v[0], 0.0))
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.w_mag[0], 0.0))
+        self.first_timestep_constraints.append(constraint)
+        constraint = self.prog.AddLinearConstraint(eq(self.h[0], 0.0))
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.hd[0], 0.0))
         self.first_timestep_constraints.append(constraint)
@@ -1003,6 +1007,17 @@ class HumanoidPlanner:
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.rdd[0], 0.0))
         self.first_timestep_constraints.append(constraint)
+
+    def check_first_timestep_constraints(self, dt, v, w_mag, h, hd, rd, rdd):
+        return check_constraints(self.first_timestep_constraints, {
+            "dt": dt,
+            "v": v,
+            "w_mag": w_mag,
+            "h": h,
+            "hd": hd,
+            "rd": rd,
+            "rdd": rdd
+        })
 
     def check_all_constraints(self, q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
         ret = True
@@ -1076,6 +1091,8 @@ class HumanoidPlanner:
             ret = ret and self.check_angular_velocity_constraints(v, w_axis, w_mag)
         if hasattr(self, "unit_axis_constraint"):
             ret = ret and self.check_unit_axis_constraint(w_axis)
+        if hasattr(self, "first_timestep_constraints"):
+            ret = ret and self.check_first_timestep_constraints(dt, v, w_mag, h, hd, rd, rdd)
         return ret
 
     def add_eq10_cost(self):
