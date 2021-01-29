@@ -1209,15 +1209,15 @@ class HumanoidPlanner:
         self.add_eq7k_torque_constraints()
 
     def add_1st_order_constraints(self):
-        # self.add_eq7c_constraints()
+        self.add_eq7c_constraints()
         self.add_eq7d_constraints()
         self.add_eq7e_constraints()
         self.add_eq7f_constraints()
+        self.add_eq7g_constraints()
 
     def add_2nd_order_constraints(self):
         self.add_eq7a_constraints()
         self.add_eq7b_constraints()
-        self.add_eq7g_constraints()
 
     def add_complementarity_constraints(self):
         self.add_eq8a_constraints()
