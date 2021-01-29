@@ -868,11 +868,28 @@ class HumanoidPlanner:
         })
 
     def add_final_centroidal_angular_momentum_constraints(self):
-        hd = self.hdd
+        h = self.h
         self.final_centroidal_angular_momentum_constraints = []
-        constraint = self.prog.AddLinearConstraint(eq(hd[-1], 0.0))
+        constraint = self.prog.AddLinearConstraint(eq(h[-1], 0.0))
         constraint.evaluator().set_description("final centroidal angular momentum")
         self.final_centroidal_angular_momentum_constraints.append(constraint)
+
+    def check_final_centroidal_angular_momentum(self, h):
+        return check_constraints(self.check_final_centroidal_angular_momentum, {
+            "h": h
+        })
+
+    def add_final_centroidal_torque_constraints(self):
+        hd = self.hd
+        self.final_centroidal_angular_momentum_constraints = []
+        constraint = self.prog.AddLinearConstraint(eq(hd[-1], 0.0))
+        constraint.evaluator().set_description("final centroidal torque")
+        self.final_centroidal_angular_momentum_constraints.append(constraint)
+
+    def check_final_centroidal_angular_momentum(self, hd):
+        return check_constraints(self.check_final_centroidal_angular_momentum, {
+            "hd": hd
+        })
 
     def add_max_time_constraints(self, max_time):
         self.T = max_time
@@ -1043,6 +1060,10 @@ class HumanoidPlanner:
             ret = ret and self.check_final_COM_velocity_constraints(rd)
         if hasattr(self, "final_COM_acceleration_constraints"):
             ret = ret and self.check_final_COM_acceleration_constraints(rdd)
+        if hasattr(self, "final_centroidal_angular_momentum_constraints"):
+            ret = ret and self.check_final_centroidal_angular_momentum_constraints(h)
+        if hasattr(self, "final_centroidal_torque_constraints"):
+            ret = ret and self.check_final_centroidal_torque_constraints(hd)
         if hasattr(self, "max_time_constraints"):
             ret = ret and self.check_max_time_constraints(dt)
         if hasattr(self, "timestep_constraints"):
