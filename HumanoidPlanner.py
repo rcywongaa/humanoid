@@ -24,6 +24,7 @@ import time
 import pdb
 import pickle
 from collections.abc import Iterable
+from typing import NamedTuple
 
 mbp_time_step = 1.0e-3
 N_f = 3 # contact force dimension
@@ -43,6 +44,23 @@ Slack for the complementary constraints
 Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
 '''
 # slack = 1e-3
+
+class Solution(NamedTuple):
+    dt     : np.array
+    q      : np.array
+    w_axis : np.array
+    w_mag  : np.array
+    v      : np.array
+    r      : np.array
+    rd     : np.array
+    rdd    : np.array
+    h      : np.array
+    hd     : np.array
+    c      : np.array
+    F      : np.array
+    tau    : np.array
+    beta   : np.array
+    slack  : np.array
 
 def create_q_interpolation(plant, context, q_traj, v_traj, dt_traj):
     t_traj = np.cumsum(dt_traj)
@@ -1019,7 +1037,23 @@ class HumanoidPlanner:
             "rdd": rdd
         })
 
-    def check_all_constraints(self, q, w_axis, w_mag, v, dt, r, rd, rdd, c, F, tau, h, hd, beta):
+    def check_all_constraints(self, solution):
+        q = solution.q
+        w_axis = solution.w_axis
+        w_mag = solution.w_mag
+        v = solution.v
+        dt = solution.dt
+        r = solution.r
+        rd = solution.rd
+        rdd = solution.rdd
+        h = solution.h
+        hd = solution.hd
+        c = solution.c
+        F = solution.F
+        tau = solution.tau
+        beta = solution.beta
+        slack = solution.slack
+
         ret = True
         if hasattr(self, "eq7a_constraints"):
             ret = ret and self.check_eq7a_constraints(F, rdd)
@@ -1219,11 +1253,10 @@ class HumanoidPlanner:
         # (self.prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
                 # .evaluator().set_description("max beta"))
 
-    def guess(self):
+    def create_initial_guess(self):
         ''' Guess '''
-        initial_guess = np.empty(self.prog.num_vars())
         dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
-        self.prog.SetDecisionVariableValueInVector(self.dt, dt_guess, initial_guess)
+
         # Guess q to avoid initializing with invalid quaternion
         quat_traj_guess = PiecewiseQuaternionSlerp(breaks=[0, self.T], quaternions=[Quaternion(self.q_init[0:4]), Quaternion(self.q_final[0:4])])
         position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([self.q_init[4:], self.q_final[4:]]).T)
@@ -1232,71 +1265,108 @@ class HumanoidPlanner:
             # See https://github.com/RobotLocomotion/drake/issues/14561
             RotationMatrix(quat_traj_guess.value(t)).ToQuaternion().wxyz(), position_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.q, q_guess, initial_guess)
 
         v_traj_guess = position_traj_guess.MakeDerivative()
         w_traj_guess = quat_traj_guess.MakeDerivative()
         v_guess = np.array([
             np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.v, v_guess, initial_guess)
 
         w_mag_guess = np.array([np.linalg.norm(v_guess[k][0:3]) for k in range(self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.w_mag, w_mag_guess, initial_guess)
         w_axis_guess = np.array([v_guess[k][0:3] / w_mag_guess[k] for k in range(self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.w_axis, w_axis_guess, initial_guess)
 
         c_guess = np.array([
             self.get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(self.N)])
         for i in range(self.N):
             assert((self.eq7i(np.concatenate([q_guess[i], v_guess[i], c_guess[i]])) == 0.0).all())
-        self.prog.SetDecisionVariableValueInVector(self.c, c_guess, initial_guess)
 
         r_guess = np.array([
             self.calc_r(q_guess[i], v_guess[i]) for i in range(self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.r, r_guess, initial_guess)
 
         rd_guess_list = [[0, 0, 0]]
         for i in range(1, self.N):
             rd_guess_list += [(r_guess[i] - r_guess[i-1])*2/dt_guess[i] - rd_guess_list[i-1]]
         rd_guess = np.array(rd_guess_list)
-        self.prog.SetDecisionVariableValueInVector(self.rd, rd_guess, initial_guess)
 
         rdd_guess = np.array([[0, 0, 0]] + [(rd_guess[i] - rd_guess[i-1])/dt_guess[i] for i in range(1, self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.rdd, rdd_guess, initial_guess)
 
         h_guess = np.array([
             self.calc_h(q_guess[i], v_guess[i]) for i in range(self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.h, h_guess, initial_guess)
 
         hd_guess = np.array([[0,0,0]] + [(h_guess[i] - h_guess[i-1])/dt_guess[i] for i in range(1, self.N)])
-        self.prog.SetDecisionVariableValueInVector(self.hd, hd_guess, initial_guess)
 
         F_guess = np.zeros((self.N, self.contact_dim))
         F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
-        self.prog.SetDecisionVariableValueInVector(self.F, F_guess, initial_guess)
 
         slack_guess = [0.1] * self.N
-        self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, initial_guess)
 
         # TODO: beta_guess
         beta_guess = 0.001 * np.ones(self.beta.shape)
         # TODO: tau_guess
         tau_guess = 0.01 * np.ones(self.tau.shape)
 
-        print("Initial guess violates the following constraints:")
-        self.check_all_constraints(
-            q_guess, w_axis_guess, w_mag_guess, v_guess, dt_guess,
-            r_guess, rd_guess, rdd_guess,
-            c_guess, F_guess, tau_guess, h_guess, hd_guess, beta_guess)
+        guess_solution = Solution(
+            dt     = dt_guess,
+            q      = q_guess,
+            w_axis = w_axis_guess,
+            w_mag  = w_mag_guess,
+            v      = v_guess,
+            r      = r_guess,
+            rd     = rd_guess,
+            rdd    = rdd_guess,
+            h      = h_guess,
+            hd     = hd_guess,
+            c      = c_guess,
+            F      = F_guess,
+            tau    = tau_guess,
+            beta   = beta_guess,
+            slack  = slack_guess
+        )
 
+        initial_guess = self.create_guess(guess_solution)
         return initial_guess
 
-    def solve(self, guess=True):
-        if guess:
-            initial_guess = self.guess()
-        else:
-            initial_guess = None
+    def create_guess(self, guess_solution):
+        print("Checking guess violations...")
+        self.check_all_constraints(guess_solution)
+
+        dt_guess = guess_solution.dt
+        q_guess = guess_solution.q
+        w_axis_guess = guess_solution.w_axis
+        w_mag_guess = guess_solution.w_mag
+        v_guess = guess_solution.v
+        r_guess = guess_solution.r
+        rd_guess = guess_solution.rd
+        rdd_guess = guess_solution.rdd
+        h_guess = guess_solution.h
+        hd_guess = guess_solution.hd
+        c_guess = guess_solution.c
+        F_guess = guess_solution.F
+        tau_guess = guess_solution.tau
+        beta_guess = guess_solution.beta
+        slack_guess = guess_solution.slack
+
+        guess = np.empty(self.prog.num_vars())
+        self.prog.SetDecisionVariableValueInVector(self.dt, dt_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.q, q_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.v, v_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.w_mag, w_mag_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.w_axis, w_axis_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.r, r_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.rd, rd_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.rdd, rdd_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.h, h_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.hd, hd_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.c, c_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.F, F_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.tau, tau_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.beta, beta_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, guess)
+
+        return guess
+
+    def solve(self, guess=None):
+        initial_guess = guess
 
         ''' Solve '''
         solver = SnoptSolver()
@@ -1308,29 +1378,29 @@ class HumanoidPlanner:
         print(f"Start solving...")
         result = solver.Solve(self.prog, initial_guess, options) # Currently takes around 30 mins
         print(f"Success: {result.is_success()}  Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
-        self.is_success = result.is_success()
-        self.q_sol = result.GetSolution(self.q)
-        self.v_sol = result.GetSolution(self.v)
-        self.w_axis_sol = result.GetSolution(self.w_axis)
-        self.w_mag_sol = result.GetSolution(self.w_mag)
-        self.dt_sol = result.GetSolution(self.dt)
-        self.r_sol = result.GetSolution(self.r)
-        self.rd_sol = result.GetSolution(self.rd)
-        self.rdd_sol = result.GetSolution(self.rdd)
-        self.c_sol = result.GetSolution(self.c)
-        self.F_sol = result.GetSolution(self.F)
-        self.tau_sol = result.GetSolution(self.tau)
-        self.h_sol = result.GetSolution(self.h)
-        self.hd_sol = result.GetSolution(self.hd)
-        self.beta_sol = result.GetSolution(self.beta)
-        self.slack_sol = result.GetSolution(self.slack)
 
         if not result.is_success():
             print(result.GetInfeasibleConstraintNames(self.prog))
-            pdb.set_trace()
 
-        return (self.r_sol, self.rd_sol, self.rdd_sol,
-                self.q_sol, self.v_sol, self.dt_sol)
+        solution = Solution(
+                dt     = result.GetSolution(self.dt),
+                q      = result.GetSolution(self.q),
+                w_axis = result.GetSolution(self.w_axis),
+                w_mag  = result.GetSolution(self.w_mag),
+                v      = result.GetSolution(self.v),
+                r      = result.GetSolution(self.r),
+                rd     = result.GetSolution(self.rd),
+                rdd    = result.GetSolution(self.rdd),
+                h      = result.GetSolution(self.h),
+                hd     = result.GetSolution(self.hd),
+                c      = result.GetSolution(self.c),
+                F      = result.GetSolution(self.F),
+                tau    = result.GetSolution(self.tau),
+                beta   = result.GetSolution(self.beta),
+                slack  = result.GetSolution(self.slack)
+        )
+
+        return result.is_success(), solution
 
 def main():
     builder = DiagramBuilder()
@@ -1353,6 +1423,12 @@ def main():
     export_filename = f"sample(final_x_{q_final[4]})(num_knot_points_{num_knot_points})(max_time_{max_time})"
 
     planner = HumanoidPlanner(plant, Atlas.CONTACTS_PER_FRAME, q_nom)
+    planner.solve(planner.create_initial_guess())
+
+    return
+
+
+    # FIXME
     if not PLAYBACK_ONLY:
         print(f"Starting pos: {q_init}\nFinal pos: {q_final}")
         planner.create_full_program(q_init, q_final, num_knot_points, max_time, pelvis_only=True)
