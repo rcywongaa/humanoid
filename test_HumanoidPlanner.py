@@ -668,8 +668,8 @@ class TestHumanoidPlanner(unittest.TestCase):
 
     def test_minimal(self):
         self.planner.create_minimal_program(50, 1)
-        self.planner.solve(guess=False)
-        self.assertTrue(self.planner.is_success)
+        is_success, sol = self.planner.solve()
+        self.assertTrue(is_success)
 
     def test_0th_order(self):
         N = 50
@@ -682,9 +682,9 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[6] = 2.0 # z position of pelvis
         q_final[15] = np.pi/4 # right hip joint swing back
         self.planner.add_0th_order_constraints(q_init, q_final, False)
-        self.planner.solve(guess=True)
-        self.assertTrue(self.planner.is_success)
-        visualize(self.planner.q_sol)
+        is_success, sol = self.planner.solve(self.planner.create_initial_guess())
+        self.assertTrue(is_success)
+        visualize(sol.q)
 
     def test_1st_order(self):
         N = 20
@@ -698,10 +698,9 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[15] = np.pi/4 # right hip joint swing back
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         self.planner.add_1st_order_constraints()
-        self.planner.add_eq10_cost()
-        self.planner.solve(guess=True)
-        self.assertTrue(self.planner.is_success)
-        # visualize(self.planner.q_sol)
+        is_success, sol = self.planner.solve(self.planner.create_initial_guess())
+        self.assertTrue(is_success)
+        visualize(sol.q)
 
     def test_2nd_order(self):
         N = 20
@@ -715,11 +714,18 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[15] = np.pi/4 # right hip joint swing back
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         self.planner.add_1st_order_constraints()
-        # self.planner.add_2nd_order_constraints()
-        # self.planner.add_eq7b_constraints()
-        self.planner.add_eq10_cost()
-        self.planner.solve(guess=True)
-        self.assertTrue(self.planner.is_success)
+        self.planner.add_2nd_order_constraints()
+        self.planner.add_eq7b_constraints()
+        is_success, sol = self.planner.solve(self.planner.create_initial_guess())
+        print("1st pass solution found!")
+        pdb.set_trace()
+        if is_success:
+            # self.planner.add_eq7a_constraints()
+            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
+        # self.planner.add_eq10_cost()
+        self.assertTrue(is_success)
+        visualize(sol.q)
+        pdb.set_trace()
 
 if __name__ == "__main__":
     unittest.main()
