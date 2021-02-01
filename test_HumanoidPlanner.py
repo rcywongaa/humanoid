@@ -717,12 +717,14 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.planner.add_2nd_order_constraints()
         self.planner.add_eq7b_constraints()
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
-        print("1st pass solution found!")
-        pdb.set_trace()
         if is_success:
-            # self.planner.add_eq7a_constraints()
+            print("1st pass solution found!")
+            self.planner.add_eq7a_constraints()
             is_success, sol = self.planner.solve(self.planner.create_guess(sol))
-        # self.planner.add_eq10_cost()
+        if is_success:
+            print("2nd pass solution found!")
+            self.planner.add_eq10_cost()
+            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
         self.assertTrue(is_success)
         visualize(sol.q)
         pdb.set_trace()
