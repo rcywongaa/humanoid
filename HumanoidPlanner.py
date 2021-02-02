@@ -587,10 +587,9 @@ class HumanoidPlanner:
         beta = self.beta
         self.eq7k_beta_positive_constraints = []
         for k in range(self.N):
-            for b in beta[k]:
-                constraint = self.prog.AddLinearConstraint(b >= 0.0)
-                constraint.evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint")
-                self.eq7k_beta_positive_constraints.append(constraint)
+            constraint = self.prog.AddLinearConstraint(ge(beta[k], 0.0))
+            constraint.evaluator().set_description(f"Eq(7k)[{k}] beta >= 0 constraint")
+            self.eq7k_beta_positive_constraints.append(constraint)
 
     def check_eq7k_beta_positive_constraints(self, beta):
         return check_constraints(self.eq7k_beta_positive_constraints, {
