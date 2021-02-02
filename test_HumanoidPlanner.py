@@ -706,16 +706,15 @@ class TestHumanoidPlanner(unittest.TestCase):
         N = 20
         self.planner.create_minimal_program(N, 1.0)
         q_init = default_q()
-        q_init[6] = 1.5 # z position of pelvis
+        q_init[6] = 1.0 # z position of pelvis
         q_final = default_q()
-        q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
+        q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, np.pi/6]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 1.0 # x position of pelvis
-        q_final[6] = 2.0 # z position of pelvis
+        q_final[6] = 1.5 # z position of pelvis
         q_final[15] = np.pi/4 # right hip joint swing back
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
-        # self.planner.add_eq10_cost()
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
         self.assertTrue(is_success)
         visualize(sol.q)
