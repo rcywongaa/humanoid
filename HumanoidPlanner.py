@@ -1273,7 +1273,12 @@ class HumanoidPlanner:
             for t in np.linspace(0, self.T, self.N)])
 
         w_mag_guess = np.array([np.linalg.norm(v_guess[k][0:3]) for k in range(self.N)])
-        w_axis_guess = np.array([v_guess[k][0:3] / w_mag_guess[k] for k in range(self.N)])
+        w_axis_guess = np.zeros((self.N, 3))
+        for k in range(self.N):
+            if w_mag_guess[k] == 0:
+                w_axis_guess[k] = [1.0, 0.0, 0.0]
+            else:
+                w_axis_guess[k] = v_guess[k][0:3] / w_mag_guess[k]
 
         c_guess = np.array([
             self.get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(self.N)])
