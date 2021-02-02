@@ -1086,17 +1086,17 @@ class HumanoidPlanner:
         if hasattr(self, "eq7k_torque_constraints"):
             ret = ret and self.check_eq7k_torque_constraints(tau, beta)
         if hasattr(self, "eq8a_constraints"):
-            ret = ret and self.check_eq8a_constraints(q, v, F)
+            ret = ret and self.check_eq8a_constraints(F, c, slack)
         if hasattr(self, "eq8b_constraints"):
-            ret = ret and self.check_eq8b_constraints(q, v, tau)
+            ret = ret and self.check_eq8b_constraints(tau, c, slack)
         if hasattr(self, "eq8c_contact_force_constraints"):
             ret = ret and self.check_eq8c_contact_force_constraints(F)
         if hasattr(self, "eq8c_contact_distance_constraint"):
-            ret = ret and self.check_eq8c_contact_distance_constraint(q, v)
+            ret = ret and self.check_eq8c_contact_distance_constraints(c)
         if hasattr(self, "eq9a_constraints"):
-            ret = ret and self.check_eq9a_constraints(F, c)
+            ret = ret and self.check_eq9a_constraints(F, c, slack)
         if hasattr(self, "eq9b_constraints"):
-            ret = ret and self.check_eq9b_constraints(F, c)
+            ret = ret and self.check_eq9b_constraints(F, c, slack)
         if hasattr(self, "initial_pose_constraints"):
             ret = ret and self.check_initial_pose_constraints(q)
         if hasattr(self, "initial_velocity_constraints"):
