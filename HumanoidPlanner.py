@@ -46,21 +46,24 @@ Same value used in drake/multibody/optimization/static_equilibrium_problem.cc
 # slack = 1e-3
 
 class Solution(NamedTuple):
-    dt     : np.array
-    q      : np.array
-    w_axis : np.array
-    w_mag  : np.array
-    v      : np.array
-    r      : np.array
-    rd     : np.array
-    rdd    : np.array
-    h      : np.array
-    hd     : np.array
-    c      : np.array
-    F      : np.array
-    tau    : np.array
-    beta   : np.array
-    slack  : np.array
+    dt         : np.array
+    q          : np.array
+    w_axis     : np.array
+    w_mag      : np.array
+    v          : np.array
+    r          : np.array
+    rd         : np.array
+    rdd        : np.array
+    h          : np.array
+    hd         : np.array
+    c          : np.array
+    F          : np.array
+    tau        : np.array
+    beta       : np.array
+    eq8a_slack : np.array
+    eq8b_slack : np.array
+    eq9a_slack : np.array
+    eq9b_slack : np.array
 
 def create_q_interpolation(plant, context, q_traj, v_traj, dt_traj):
     t_traj = np.cumsum(dt_traj)
@@ -261,6 +264,9 @@ class HumanoidPlanner:
         q_err = plant.MapQDotToVelocity(context, q-self.q_nom)
         return (dt*(q_err.dot(Q_q).dot(q_err)))[0] # AddCost requires cost function to return scalar, not array
 
+    '''
+    func must return an array
+    '''
     def add_constraint(self, func, *args, ub =[0], lb =[0]):
         arg_list = list(args)
         for i in range(len(arg_list)):
@@ -621,6 +627,9 @@ class HumanoidPlanner:
         })
 
     def add_eq8a_constraints(self):
+        '''
+        We can use a combined slack because each Fj[:,2] * cj[:,2] must be positive
+        '''
         def eq8a_lhs(F, c, slack):
             Fj = self.reshape_3d_contact(F)
             cj = self.reshape_3d_contact(c)
@@ -628,7 +637,7 @@ class HumanoidPlanner:
 
         F = self.F
         c = self.c
-        slack = self.slack
+        slack = self.eq8a_slack
         self.eq8a_constraints = []
         for k in range(self.N):
             constraint = self.add_constraint(eq8a_lhs, F[k], c[k], slack[k])
@@ -645,7 +654,7 @@ class HumanoidPlanner:
     def add_eq8b_constraints(self):
         tau = self.tau
         c = self.c
-        slack = self.slack
+        slack = self.eq8b_slack
         self.eq8b_constraints = []
         for k in range(self.N):
             constraint = self.add_constraint(
@@ -698,16 +707,19 @@ class HumanoidPlanner:
         })
 
     def add_eq9a_constraints(self):
+        '''
+        We use a per contact slack here because the slack can be positive or negative
+        '''
         ''' Assume flat ground for now... '''
         def eq9a_lhs(F, c, c_prev, i, slack):
             Fj = self.reshape_3d_contact(F)
             cj = self.reshape_3d_contact(c)
             cj_prev = self.reshape_3d_contact(c_prev)
-            return Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) - slack
+            return np.array([Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([1.0, 0.0, 0.0])) - slack[i]])
 
         F = self.F
         c = self.c
-        slack = self.slack
+        slack = self.eq9a_slack
         self.eq9a_constraints = []
         for k in range(1, self.N):
             contact_constraints = []
@@ -739,11 +751,11 @@ class HumanoidPlanner:
             Fj = self.reshape_3d_contact(F)
             cj = self.reshape_3d_contact(c)
             cj_prev = self.reshape_3d_contact(c_prev)
-            return Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) - slack
+            return [Fj[i,2] * (cj[i] - cj_prev[i]).dot(np.array([0.0, 1.0, 0.0])) - slack[i]]
 
         F = self.F
         c = self.c
-        slack = self.slack
+        slack = self.eq9b_slack
         self.eq9b_constraints = []
         for k in range(1, self.N):
             contact_constraints = []
@@ -767,7 +779,9 @@ class HumanoidPlanner:
         })
 
     def add_slack_constraints(self):
-        self.prog.AddConstraint(ge(self.slack, 0))
+        self.prog.AddConstraint(ge(self.eq8a_slack, 0))
+        self.prog.AddConstraint(ge(self.eq8b_slack, 0))
+        # Note these eq9a_slack, eq9b_slack can be negative
 
     def add_contact_sequence_constraint(self):
         right_foot_start_idx = int(self.num_contacts/2)
@@ -1038,21 +1052,24 @@ class HumanoidPlanner:
         })
 
     def check_all_constraints(self, solution):
-        q = solution.q
-        w_axis = solution.w_axis
-        w_mag = solution.w_mag
-        v = solution.v
-        dt = solution.dt
-        r = solution.r
-        rd = solution.rd
-        rdd = solution.rdd
-        h = solution.h
-        hd = solution.hd
-        c = solution.c
-        F = solution.F
-        tau = solution.tau
-        beta = solution.beta
-        slack = solution.slack
+        q          = solution.q
+        w_axis     = solution.w_axis
+        w_mag      = solution.w_mag
+        v          = solution.v
+        dt         = solution.dt
+        r          = solution.r
+        rd         = solution.rd
+        rdd        = solution.rdd
+        h          = solution.h
+        hd         = solution.hd
+        c          = solution.c
+        F          = solution.F
+        tau        = solution.tau
+        beta       = solution.beta
+        eq8a_slack = solution.eq8a_slack
+        eq8b_slack = solution.eq8b_slack
+        eq9a_slack = solution.eq9a_slack
+        eq9b_slack = solution.eq9b_slack
 
         ret = True
         if hasattr(self, "eq7a_constraints"):
@@ -1086,17 +1103,17 @@ class HumanoidPlanner:
         if hasattr(self, "eq7k_torque_constraints"):
             ret = ret and self.check_eq7k_torque_constraints(tau, beta)
         if hasattr(self, "eq8a_constraints"):
-            ret = ret and self.check_eq8a_constraints(F, c, slack)
+            ret = ret and self.check_eq8a_constraints(F, c, eq8a_slack)
         if hasattr(self, "eq8b_constraints"):
-            ret = ret and self.check_eq8b_constraints(tau, c, slack)
+            ret = ret and self.check_eq8b_constraints(tau, c, eq8b_slack)
         if hasattr(self, "eq8c_contact_force_constraints"):
             ret = ret and self.check_eq8c_contact_force_constraints(F)
         if hasattr(self, "eq8c_contact_distance_constraint"):
             ret = ret and self.check_eq8c_contact_distance_constraints(c)
         if hasattr(self, "eq9a_constraints"):
-            ret = ret and self.check_eq9a_constraints(F, c, slack)
+            ret = ret and self.check_eq9a_constraints(F, c, eq9a_slack)
         if hasattr(self, "eq9b_constraints"):
-            ret = ret and self.check_eq9b_constraints(F, c, slack)
+            ret = ret and self.check_eq9b_constraints(F, c, eq9b_slack)
         if hasattr(self, "initial_pose_constraints"):
             ret = ret and self.check_initial_pose_constraints(q)
         if hasattr(self, "initial_velocity_constraints"):
@@ -1142,7 +1159,10 @@ class HumanoidPlanner:
                     + rdd[k].dot(rdd[k])))[0])
 
     def add_slack_cost(self):
-        self.prog.AddCost(1e3*(self.slack.T@self.slack)[0,0])
+        self.prog.AddCost(1e3*np.sum(self.eq8a_slack**2))
+        self.prog.AddCost(1e3*np.sum(self.eq8b_slack**2))
+        self.prog.AddCost(1e3*np.sum(self.eq9a_slack**2))
+        self.prog.AddCost(1e3*np.sum(self.eq9b_slack**2))
 
     def create_minimal_program(self, num_knot_points, max_time):
         assert(max_time / num_knot_points > MIN_TIMESTEP)
@@ -1172,7 +1192,10 @@ class HumanoidPlanner:
         self.beta = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts*self.N_d, name="beta")
 
         ''' Slack for complementarity constraints '''
-        self.slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="slack")
+        self.eq8a_slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="eq8a_slack")
+        self.eq8b_slack = self.prog.NewContinuousVariables(rows=self.N, cols=1, name="eq8b_slack")
+        self.eq9a_slack = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts, name="eq9a_slack")
+        self.eq9b_slack = self.prog.NewContinuousVariables(rows=self.N, cols=self.num_contacts, name="eq9b_slack")
 
         ''' These constraints were not explicitly stated in the paper'''
         self.add_max_time_constraints(max_time)
@@ -1303,7 +1326,10 @@ class HumanoidPlanner:
         F_guess = np.zeros((self.N, self.contact_dim))
         F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
 
-        slack_guess = [0.1] * self.N
+        eq8a_slack_guess = np.zeros(self.N)
+        eq8b_slack_guess = np.zeros(self.N)
+        eq9a_slack_guess = np.zeros((self.N, self.num_contacts))
+        eq9b_slack_guess = np.zeros((self.N, self.num_contacts))
 
         # TODO: beta_guess
         beta_guess = 0.001 * np.ones(self.beta.shape)
@@ -1311,21 +1337,24 @@ class HumanoidPlanner:
         tau_guess = 0.01 * np.ones(self.tau.shape)
 
         guess_solution = Solution(
-            dt     = dt_guess,
-            q      = q_guess,
-            w_axis = w_axis_guess,
-            w_mag  = w_mag_guess,
-            v      = v_guess,
-            r      = r_guess,
-            rd     = rd_guess,
-            rdd    = rdd_guess,
-            h      = h_guess,
-            hd     = hd_guess,
-            c      = c_guess,
-            F      = F_guess,
-            tau    = tau_guess,
-            beta   = beta_guess,
-            slack  = slack_guess
+            dt         = dt_guess,
+            q          = q_guess,
+            w_axis     = w_axis_guess,
+            w_mag      = w_mag_guess,
+            v          = v_guess,
+            r          = r_guess,
+            rd         = rd_guess,
+            rdd        = rdd_guess,
+            h          = h_guess,
+            hd         = hd_guess,
+            c          = c_guess,
+            F          = F_guess,
+            tau        = tau_guess,
+            beta       = beta_guess,
+            eq8a_slack = eq8a_slack_guess,
+            eq8b_slack = eq8b_slack_guess,
+            eq9a_slack = eq9a_slack_guess,
+            eq9b_slack = eq9b_slack_guess
         )
 
         initial_guess = self.create_guess(guess_solution)
@@ -1349,7 +1378,10 @@ class HumanoidPlanner:
         F_guess = guess_solution.F
         tau_guess = guess_solution.tau
         beta_guess = guess_solution.beta
-        slack_guess = guess_solution.slack
+        eq8a_slack_guess = guess_solution.eq8a_slack
+        eq8b_slack_guess = guess_solution.eq8b_slack
+        eq9a_slack_guess = guess_solution.eq9a_slack
+        eq9b_slack_guess = guess_solution.eq9b_slack
 
         guess = np.empty(self.prog.num_vars())
         self.prog.SetDecisionVariableValueInVector(self.dt, dt_guess, guess)
@@ -1366,7 +1398,10 @@ class HumanoidPlanner:
         self.prog.SetDecisionVariableValueInVector(self.F, F_guess, guess)
         self.prog.SetDecisionVariableValueInVector(self.tau, tau_guess, guess)
         self.prog.SetDecisionVariableValueInVector(self.beta, beta_guess, guess)
-        self.prog.SetDecisionVariableValueInVector(self.slack, slack_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.eq8a_slack, eq8a_slack_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.eq8b_slack, eq8b_slack_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.eq9a_slack, eq9a_slack_guess, guess)
+        self.prog.SetDecisionVariableValueInVector(self.eq9b_slack, eq9b_slack_guess, guess)
 
         return guess
 
@@ -1381,28 +1416,31 @@ class HumanoidPlanner:
         # options.SetOption(CommonSolverOption.kPrintToConsole, True)
         start_solve_time = time.time()
         print(f"Start solving...")
-        result = solver.Solve(self.prog, initial_guess, options) # Currently takes around 30 mins
+        result = solver.Solve(self.prog, initial_guess, options)
         print(f"Success: {result.is_success()}  Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
 
         if not result.is_success():
             print(result.GetInfeasibleConstraintNames(self.prog))
 
         solution = Solution(
-                dt     = result.GetSolution(self.dt),
-                q      = result.GetSolution(self.q),
-                w_axis = result.GetSolution(self.w_axis),
-                w_mag  = result.GetSolution(self.w_mag),
-                v      = result.GetSolution(self.v),
-                r      = result.GetSolution(self.r),
-                rd     = result.GetSolution(self.rd),
-                rdd    = result.GetSolution(self.rdd),
-                h      = result.GetSolution(self.h),
-                hd     = result.GetSolution(self.hd),
-                c      = result.GetSolution(self.c),
-                F      = result.GetSolution(self.F),
-                tau    = result.GetSolution(self.tau),
-                beta   = result.GetSolution(self.beta),
-                slack  = result.GetSolution(self.slack)
+                dt         = result.GetSolution(self.dt),
+                q          = result.GetSolution(self.q),
+                w_axis     = result.GetSolution(self.w_axis),
+                w_mag      = result.GetSolution(self.w_mag),
+                v          = result.GetSolution(self.v),
+                r          = result.GetSolution(self.r),
+                rd         = result.GetSolution(self.rd),
+                rdd        = result.GetSolution(self.rdd),
+                h          = result.GetSolution(self.h),
+                hd         = result.GetSolution(self.hd),
+                c          = result.GetSolution(self.c),
+                F          = result.GetSolution(self.F),
+                tau        = result.GetSolution(self.tau),
+                beta       = result.GetSolution(self.beta),
+                eq8a_slack = result.GetSolution(self.eq8a_slack),
+                eq8b_slack = result.GetSolution(self.eq8b_slack),
+                eq9a_slack = result.GetSolution(self.eq9a_slack),
+                eq9b_slack = result.GetSolution(self.eq9b_slack)
         )
 
         return result.is_success(), solution
