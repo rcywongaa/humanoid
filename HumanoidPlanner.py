@@ -605,7 +605,8 @@ class HumanoidPlanner:
             beta_k = np.reshape(beta[k], (self.num_contacts, self.N_d))
             friction_torque_constraints = []
             for i in range(self.num_contacts):
-                max_torque = friction_torque_coefficient * np.sum(beta_k[i])
+                # max_torque = friction_torque_coefficient * np.sum(beta_k[i])
+                max_torque = 0.1
                 upper_constraint = self.prog.AddLinearConstraint(le(tau[k][i], np.array([max_torque])))
                 upper_constraint.evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit")
                 lower_constraint = self.prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
