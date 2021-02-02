@@ -704,30 +704,21 @@ class TestHumanoidPlanner(unittest.TestCase):
 
     def test_2nd_order(self):
         N = 20
-        self.planner.create_minimal_program(N, 0.5)
+        self.planner.create_minimal_program(N, 1.0)
         q_init = default_q()
         q_init[6] = 1.5 # z position of pelvis
         q_final = default_q()
-        q_final[0:4] = Quaternion(RollPitchYaw([2*np.pi, np.pi, np.pi/2]).ToRotationMatrix().matrix()).wxyz()
+        q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 1.0 # x position of pelvis
         q_final[6] = 2.0 # z position of pelvis
         q_final[15] = np.pi/4 # right hip joint swing back
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
-        self.planner.add_eq7b_constraints()
+        # self.planner.add_eq10_cost()
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
-        if is_success:
-            print("1st pass solution found!")
-            self.planner.add_eq7a_constraints()
-            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
-        if is_success:
-            print("2nd pass solution found!")
-            self.planner.add_eq10_cost()
-            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
         self.assertTrue(is_success)
         visualize(sol.q)
-        pdb.set_trace()
 
 if __name__ == "__main__":
     unittest.main()
