@@ -648,7 +648,7 @@ class HumanoidPlanner:
         return check_constraints(self.eq8a_constraints, {
             "F": F,
             "c": c,
-            "slack": slack
+            "eq8a_slack": slack
         })
 
     def add_eq8b_constraints(self):
@@ -667,7 +667,7 @@ class HumanoidPlanner:
         return check_constraints(self.eq8b_constraints, {
             "tau": tau,
             "c": c,
-            "slack": slack
+            "eq8b_slack": slack
         })
 
     def add_eq8c_contact_force_constraints(self):
@@ -743,7 +743,7 @@ class HumanoidPlanner:
         return check_constraints(self.eq9a_constraints, {
             "F": F,
             "c": c,
-            "slack": slack
+            "eq9a_slack": slack
         })
 
     def add_eq9b_constraints(self):
@@ -775,7 +775,7 @@ class HumanoidPlanner:
         return check_constraints(self.eq9b_constraints, {
             "F": F,
             "c": c,
-            "slack": slack
+            "eq9b_slack": slack
         })
 
     def add_slack_constraints(self):
