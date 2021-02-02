@@ -742,6 +742,10 @@ class TestHumanoidPlanner(unittest.TestCase):
             self.planner.add_eq9a_constraints()
             self.planner.add_eq9b_constraints()
             is_success, sol = self.planner.solve(self.planner.create_guess(sol))
+        if is_success:
+            print("Complementarity solution found!")
+            self.planner.add_slack_cost()
+            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
         # self.planner.add_eq10_cost()
         self.assertTrue(is_success)
         visualize(sol.q)
