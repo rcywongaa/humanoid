@@ -892,20 +892,20 @@ class HumanoidPlanner:
         constraint.evaluator().set_description("final centroidal angular momentum")
         self.final_centroidal_angular_momentum_constraints.append(constraint)
 
-    def check_final_centroidal_angular_momentum(self, h):
-        return check_constraints(self.check_final_centroidal_angular_momentum, {
+    def check_final_centroidal_angular_momentum_constraints(self, h):
+        return check_constraints(self.final_centroidal_angular_momentum_constraints, {
             "h": h
         })
 
     def add_final_centroidal_torque_constraints(self):
         hd = self.hd
-        self.final_centroidal_angular_momentum_constraints = []
+        self.final_centroidal_torque_constraints = []
         constraint = self.prog.AddLinearConstraint(eq(hd[-1], 0.0))
         constraint.evaluator().set_description("final centroidal torque")
-        self.final_centroidal_angular_momentum_constraints.append(constraint)
+        self.final_centroidal_torque_constraints.append(constraint)
 
-    def check_final_centroidal_angular_momentum(self, hd):
-        return check_constraints(self.check_final_centroidal_angular_momentum, {
+    def check_final_centroidal_torque_constraints(self, hd):
+        return check_constraints(self.final_centroidal_torque_constraints, {
             "hd": hd
         })
 
