@@ -15,7 +15,7 @@ from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuate
 from pydrake.all import AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, eq, le, ge, SolverOptions
-# from pydrake.all import IpoptSolver
+from pydrake.all import IpoptSolver
 from pydrake.all import SnoptSolver
 from pydrake.all import Quaternion_, AutoDiffXd
 from HumanoidController import HumanoidController
@@ -1114,6 +1114,10 @@ class HumanoidPlanner:
             ret = ret and self.check_eq9a_constraints(F, c, eq9a_slack)
         if hasattr(self, "eq9b_constraints"):
             ret = ret and self.check_eq9b_constraints(F, c, eq9b_slack)
+        # TODO:
+        # slack_constraints
+        # if hasattr(self, "contact_sequence_constraints"):
+            # ret = ret and self.check_contact_sequence_constraints()
         if hasattr(self, "initial_pose_constraints"):
             ret = ret and self.check_initial_pose_constraints(q)
         if hasattr(self, "initial_velocity_constraints"):
@@ -1153,16 +1157,17 @@ class HumanoidPlanner:
         rdd = self.rdd
         for k in range(self.N):
             Q_v = 0.5 * np.identity(self.plant_float.num_velocities())
-            self.prog.AddCost(self.pose_error_cost, vars=np.concatenate([q[k], v[k], dt[k]])) # np.concatenate requires items to have compatible shape
-            self.prog.AddCost((dt[k]*(
-                    + v[k].dot(Q_v).dot(v[k])
-                    + rdd[k].dot(rdd[k])))[0])
+            # self.prog.AddCost(self.pose_error_cost, vars=np.concatenate([q[k], v[k], dt[k]])) # np.concatenate requires items to have compatible shape
+            # self.prog.AddCost((dt[k]*(
+                    # + v[k].dot(Q_v).dot(v[k])
+                    # + rdd[k].dot(rdd[k])))[0])
+            self.prog.AddCost(v[k].dot(Q_v).dot(v[k]))
 
     def add_slack_cost(self):
-        self.prog.AddCost(1e3*np.sum(self.eq8a_slack**2))
-        self.prog.AddCost(1e3*np.sum(self.eq8b_slack**2))
-        self.prog.AddCost(1e3*np.sum(self.eq9a_slack**2))
-        self.prog.AddCost(1e3*np.sum(self.eq9b_slack**2))
+        self.prog.AddCost(np.sum(self.eq8a_slack**2))
+        self.prog.AddCost(np.sum(self.eq8b_slack**2))
+        # self.prog.AddCost(np.sum(self.eq9a_slack**2))
+        # self.prog.AddCost(np.sum(self.eq9b_slack**2))
 
     def create_minimal_program(self, num_knot_points, max_time):
         assert(max_time / num_knot_points > MIN_TIMESTEP)
@@ -1330,6 +1335,12 @@ class HumanoidPlanner:
         eq8b_slack_guess = np.zeros(self.N)
         eq9a_slack_guess = np.zeros((self.N, self.num_contacts))
         eq9b_slack_guess = np.zeros((self.N, self.num_contacts))
+        # for k in range(1, self.N):
+            # Fj = self.reshape_3d_contact(F[k])
+            # cj = self.reshape_3d_contact(c[k])
+            # for i in range(self.num_contacts):
+                # eq9a_slack = Fj[i,2] * (cj[i] - cj[i-1]).dot(np.array([1.0, 0.0, 0.0]))
+                # eq9b_slack = Fj[i,2] * (cj[i] - cj[i-1]).dot(np.array([0.0, 1.0, 0.0]))
 
         # TODO: beta_guess
         beta_guess = 0.001 * np.ones(self.beta.shape)
@@ -1410,6 +1421,7 @@ class HumanoidPlanner:
 
         ''' Solve '''
         solver = SnoptSolver()
+        # solver = IpoptSolver()
         options = SolverOptions()
         # options.SetOption(solver.solver_id(), "max_iter", 50000)
         # This doesn't seem to do anything...
@@ -1419,8 +1431,8 @@ class HumanoidPlanner:
         result = solver.Solve(self.prog, initial_guess, options)
         print(f"Success: {result.is_success()}  Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
 
-        if not result.is_success():
-            print(result.GetInfeasibleConstraintNames(self.prog))
+        # if not result.is_success():
+            # print(result.GetInfeasibleConstraintNames(self.prog))
 
         solution = Solution(
                 dt         = result.GetSolution(self.dt),
