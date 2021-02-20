@@ -718,6 +718,25 @@ class TestHumanoidPlanner(unittest.TestCase):
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
         self.assertTrue(is_success)
         visualize(sol.q)
+    def test_contact_sequence_constraints(self):
+        N = 50
+        self.planner.create_minimal_program(N, 1.0)
+        q_init = default_q()
+        q_init[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
+        q_final = default_q()
+        q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
+        q_final[4] = 0.5 # x position of pelvis
+        q_final[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
+        self.planner.add_0th_order_constraints(q_init, q_final, False)
+        self.planner.add_1st_order_constraints()
+        self.planner.add_2nd_order_constraints()
+        is_success, sol = self.planner.solve(self.planner.create_initial_guess())
+        if is_success:
+            self.planner.add_contact_sequence_constraints()
+            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
+        visualize(sol.q)
+        pdb.set_trace()
+        self.assertTrue(is_success)
 
     def test_complementarity_constraints(self):
         N = 20

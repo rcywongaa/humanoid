@@ -783,43 +783,57 @@ class HumanoidPlanner:
         self.prog.AddConstraint(ge(self.eq8b_slack, 0))
         # Note these eq9a_slack, eq9b_slack can be negative
 
-    def add_contact_sequence_constraint(self):
+    # TODO: Constrain foot placement exactly
+    def create_stance_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
+        cj = self.reshape_3d_contact(self.c[k])
+        Fj = self.reshape_3d_contact(self.F[k])
+        tau = self.tau
+        stance_position_constraint = self.prog.AddLinearConstraint(eq(cj[contact_start_idx:contact_end_idx,2], 0.0))
+        stance_position_constraint.evaluator().set_description(f"{name} stance position constraint")
+        stance_force_constraint = self.prog.AddLinearConstraint(ge(Fj[contact_start_idx:contact_end_idx,2], 0.0))
+        stance_force_constraint.evaluator().set_description(f"{name} stance force constraint")
+        return (stance_position_constraint, stance_force_constraint)
+
+    def create_swing_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
+        cj = self.reshape_3d_contact(self.c[k])
+        Fj = self.reshape_3d_contact(self.F[k])
+        tau = self.tau[k]
+        stance_position_constraint = self.prog.AddLinearConstraint(ge(cj[contact_start_idx:contact_end_idx,2], 0.0))
+        stance_position_constraint.evaluator().set_description(f"{name} swing position constraint")
+        stance_force_constraint = self.prog.AddLinearConstraint(eq(Fj[contact_start_idx:contact_end_idx,2], 0.0))
+        stance_force_constraint.evaluator().set_description(f"{name} swing force constraint")
+        stance_torque_constraint = self.prog.AddLinearConstraint(eq(tau[contact_start_idx:contact_end_idx], 0.0))
+        stance_torque_constraint.evaluator().set_description(f"{name} swing torque constraint")
+        return (stance_position_constraint, stance_force_constraint, stance_torque_constraint)
+
+    def add_contact_sequence_constraints(self):
         right_foot_start_idx = int(self.num_contacts/2)
-        c = self.c
         self.contact_sequence_constraints = []
         for k in range(self.N):
-            cj = self.reshape_3d_contact(c[k])
             if k < int(self.N/5):
                 # Double stance
-                double_stance_constraint = self.prog.AddLinearConstraint(eq(cj[:, 2], 0.0))
-                double_stance_constraint.evaluator().set_description(f"double stance 1")
-                self.contact_sequence_constraints.append(double_stance_constraint)
+                double_stance_constraints = self.create_stance_constraint(k, name="both 1")
+                self.contact_sequence_constraints.append(double_stance_constraints)
             elif k < int(2*self.N/5):
                 # Left swing, right stance
-                left_swing_constraint = self.prog.AddLinearConstraint(ge(cj[:right_foot_start_idx, 2], 0.0))
-                left_swing_constraint.evaluator().set_description(f"left swing")
-                self.contact_sequence_constraints.append(left_swing_constraint)
-                right_stance_constraint = self.prog.AddLinearConstraint(eq(cj[right_foot_start_idx:, 2], 0.0))
-                right_stance_constraint.evaluator().set_description(f"right stance")
-                self.contact_sequence_constraints.append(right_stance_constraint)
+                left_swing_constraints = self.create_swing_constraint(k, 0, right_foot_start_idx, name="left")
+                self.contact_sequence_constraints.append(left_swing_constraints)
+                right_stance_constraints = self.create_stance_constraint(k, right_foot_start_idx, -1, name="right")
+                self.contact_sequence_constraints.append(right_stance_constraints)
             elif k < int(3*self.N/5):
                 # Double stance
-                double_stance_constraint = self.prog.AddLinearConstraint(eq(cj[:,2], 0.0))
-                double_stance_constraint.evaluator().set_description(f"double stance 2")
-                self.contact_sequence_constraints.append(double_stance_constraint)
+                double_stance_constraints = self.create_stance_constraint(k,name="both 2")
+                self.contact_sequence_constraints.append(double_stance_constraints)
             elif k < int(4*self.N/5):
                 # Left stance right swing
-                left_swing_constraint = self.prog.AddLinearConstraint(eq(cj[:right_foot_start_idx, 2], 0.0))
-                left_swing_constraint.evaluator().set_description(f"left swing")
-                self.contact_sequence_constraints.append(left_swing_constraint)
-                right_stance_constraint = self.prog.AddLinearConstraint(ge(cj[right_foot_start_idx:, 2], 0.0))
-                right_stance_constraint.evaluator().set_description(f"right stance")
-                self.contact_sequence_constraints.append(right_stance_constraint)
+                left_stance_constraints = self.create_stance_constraint(k, 0, right_foot_start_idx, name="left")
+                self.contact_sequence_constraints.append(left_stance_constraints)
+                right_swing_constraints = self.create_swing_constraint(k, right_foot_start_idx, -1, name="right")
+                self.contact_sequence_constraints.append(right_swing_constraints)
             else:
                 # Double stance
-                double_stance_constraint = self.prog.AddLinearConstraint(eq(cj[:,2], 0.0))
-                double_stance_constraint.evaluator().set_description(f"double stance 3")
-                self.contact_sequence_constraints.append(double_stance_constraint)
+                double_stance_constraints = self.create_stance_constraint(k, name="both 3")
+                self.contact_sequence_constraints.append(double_stance_constraints)
 
     def add_initial_pose_constraints(self, q_init):
         self.q_init = q_init
