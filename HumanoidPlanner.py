@@ -312,7 +312,7 @@ class HumanoidPlanner:
         for k in range(self.N):
             Fj = self.reshape_3d_contact(F[k])
             cj = self.reshape_3d_contact(c[k])
-            tauj = self.reshape_tauj(self.tau[k])
+            tauj = self.reshape_tauj(tau[k])
             constraint = self.prog.AddConstraint(
                     eq(hd[k], np.sum(np.cross(cj - r[k], Fj) + tauj, axis=0)))
             constraint.evaluator().set_description(f"Eq(7b)[{k}]")
@@ -612,7 +612,7 @@ class HumanoidPlanner:
             friction_torque_constraints = []
             for i in range(self.num_contacts):
                 # max_torque = friction_torque_coefficient * np.sum(beta_k[i])
-                max_torque = 0.1
+                max_torque = 1.0
                 upper_constraint = self.prog.AddLinearConstraint(le(tau[k][i], np.array([max_torque])))
                 upper_constraint.evaluator().set_description(f"Eq(7k)[{k}] friction torque upper limit")
                 lower_constraint = self.prog.AddLinearConstraint(ge(tau[k][i], np.array([-max_torque])))
@@ -781,7 +781,7 @@ class HumanoidPlanner:
     def add_slack_constraints(self):
         self.prog.AddConstraint(ge(self.eq8a_slack, 0))
         self.prog.AddConstraint(ge(self.eq8b_slack, 0))
-        # Note these eq9a_slack, eq9b_slack can be negative
+        # Note that eq9a_slack, eq9b_slack can be negative
 
     # TODO: Constrain foot placement exactly
     def create_stance_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
@@ -995,7 +995,7 @@ class HumanoidPlanner:
 
     def add_unit_quaternion_constraints(self):
         q = self.q
-        self.unit_quaternion_constraints = []
+        # self.unit_quaternion_constraints = []
         for k in range(self.N):
             AddUnitQuaternionConstraintOnPlant(self.plant_float, q[k], self.prog)
             # constraint.evaluator().set_description(f"unit quaternion constraint[{k}]")
