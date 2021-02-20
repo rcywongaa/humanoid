@@ -735,7 +735,7 @@ class HumanoidPlanner:
                 constraint = self.add_constraint(
                         lambda F, c, cprev, slack, i=i : eq9a_lhs(F, c, cprev, i, slack),
                         F[k], c[k], c[k-1], slack[k])
-                constraint.evaluator().set_description("Eq(9a)[{k}][{i}]")
+                constraint.evaluator().set_description(f"Eq(9a)[{k}][{i}]")
                 contact_constraints.append(constraint)
             self.eq9a_constraints.append(contact_constraints)
 
