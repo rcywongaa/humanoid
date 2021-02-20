@@ -1040,18 +1040,25 @@ class HumanoidPlanner:
     def add_first_timestep_constraints(self):
         self.first_timestep_constraints = []
         constraint = self.prog.AddLinearConstraint(eq(self.dt[0], 0.0))
+        constraint.evaluator().set_description("First timestep dt constraint")
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.v[0], 0.0))
+        constraint.evaluator().set_description("First timestep v constraint")
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.w_mag[0], 0.0))
+        constraint.evaluator().set_description("First timestep w_mag constraint")
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.h[0], 0.0))
+        constraint.evaluator().set_description("First timestep h constraint")
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.hd[0], 0.0))
+        constraint.evaluator().set_description("First timestep hd constraint")
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.rd[0], 0.0))
+        constraint.evaluator().set_description("First timestep rd constraint")
         self.first_timestep_constraints.append(constraint)
         constraint = self.prog.AddLinearConstraint(eq(self.rdd[0], 0.0))
+        constraint.evaluator().set_description("First timestep rdd constraint")
         self.first_timestep_constraints.append(constraint)
 
     def check_first_timestep_constraints(self, dt, v, w_mag, h, hd, rd, rdd):
