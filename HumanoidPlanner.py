@@ -1287,7 +1287,7 @@ class HumanoidPlanner:
         if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
             self.add_complementarity_constraints()
         else:
-            self.add_contact_sequence_constraint()
+            self.add_contact_sequence_constraints()
 
         self.add_eq10_cost()
 
