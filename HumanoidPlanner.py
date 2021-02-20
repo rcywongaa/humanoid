@@ -1350,7 +1350,10 @@ class HumanoidPlanner:
         hd_guess = np.array([[0,0,0]] + [(h_guess[i] - h_guess[i-1])/dt_guess[i] for i in range(1, self.N)])
 
         F_guess = np.zeros((self.N, self.contact_dim))
-        F_guess[:,2::3] = Atlas.M * Atlas.g / self.num_contacts
+        for i in range(self.N):
+            F_guess[i,0::3] = (Atlas.M * rdd_guess[i][0]) / self.num_contacts
+            F_guess[i,1::3] = (Atlas.M * rdd_guess[i][1]) / self.num_contacts
+            F_guess[i,2::3] = Atlas.M * (rdd_guess[i] - g)[2] / self.num_contacts
 
         eq8a_slack_guess = np.zeros(self.N)
         eq8b_slack_guess = np.zeros(self.N)
