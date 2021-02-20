@@ -52,7 +52,7 @@ def assert_autodiff_array_almost_equal(autodiff_array, float_array):
 
 def default_q(N = 0):
     pelvis_orientation = [1., 0., 0., 0.]
-    pelvis_position = [0., 0., 0.93845] # Feet just touching ground
+    pelvis_position = [0., 0., Atlas.PELVIS_HEIGHT] # Feet just touching ground
     joint_positions = [0.] * Atlas.NUM_ACTUATED_DOF
     if N == 0:
         return np.array(pelvis_orientation + pelvis_position + joint_positions)
@@ -723,29 +723,35 @@ class TestHumanoidPlanner(unittest.TestCase):
         N = 20
         self.planner.create_minimal_program(N, 1.0)
         q_init = default_q()
-        q_init[6] = 1.0 # z position of pelvis
+        q_init[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
         q_final = default_q()
         q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
-        q_final[4] = 1.0 # x position of pelvis
-        q_final[6] = 1.0 # z position of pelvis
+        q_final[4] = 0.5 # x position of pelvis
+        q_final[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
         self.planner.add_slack_constraints()
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
-        if is_success:
-            print("Non-complementarity solution found!")
-            self.planner.add_eq8a_constraints()
-            self.planner.add_eq8b_constraints()
-            self.planner.add_eq8c_contact_force_constraints()
-            self.planner.add_eq8c_contact_distance_constraints()
-            self.planner.add_eq9a_constraints()
-            self.planner.add_eq9b_constraints()
-            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
-        if is_success:
-            print("Complementarity solution found!")
-            self.planner.add_slack_cost()
-            is_success, sol = self.planner.solve(self.planner.create_guess(sol))
+        if not is_success:
+            self.fail("Failed to find non-complementarity solution!")
+
+        pdb.set_trace()
+
+        print("Non-complementarity solution found!")
+        self.planner.add_eq8a_constraints()
+        self.planner.add_eq8b_constraints()
+        self.planner.add_eq8c_contact_force_constraints()
+        self.planner.add_eq8c_contact_distance_constraints()
+        self.planner.add_eq9a_constraints()
+        self.planner.add_eq9b_constraints()
+        is_success, sol = self.planner.solve(self.planner.create_guess(sol))
+        if not is_success:
+            self.fail("Failed to find complementarity solution!")
+
+        print("Complementarity solution found!")
+        self.planner.add_slack_cost()
+        is_success, sol = self.planner.solve(self.planner.create_guess(sol))
         # self.planner.add_eq10_cost()
         self.assertTrue(is_success)
         visualize(sol.q)

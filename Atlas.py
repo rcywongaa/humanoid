@@ -25,6 +25,7 @@ class Atlas():
     # Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
     M = 175.0
     g = 9.81
+    PELVIS_HEIGHT = 0.93845
 
     class JointLimit(NamedTuple):
         effort: float
