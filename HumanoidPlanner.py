@@ -1094,81 +1094,81 @@ class HumanoidPlanner:
 
         ret = True
         if hasattr(self, "eq7a_constraints"):
-            ret = ret and self.check_eq7a_constraints(F, rdd)
+            ret = self.check_eq7a_constraints(F, rdd) and ret
         if hasattr(self, "eq7b_constraints"):
-            ret = ret and self.check_eq7b_constraints(F, c, tau, hd, r)
+            ret = self.check_eq7b_constraints(F, c, tau, hd, r) and ret
         if hasattr(self, "eq7c_constraints"):
-            ret = ret and self.check_eq7c_constraints(q, v, h)
+            ret = self.check_eq7c_constraints(q, v, h) and ret
         if hasattr(self, "eq7d_constraints"):
-            ret = ret and self.check_eq7d_constraints(q, w_axis, w_mag, v, dt)
+            ret = self.check_eq7d_constraints(q, w_axis, w_mag, v, dt) and ret
         if hasattr(self, "eq7e_constraints"):
-            ret = ret and self.check_eq7e_constraints(h, hd, dt)
+            ret = self.check_eq7e_constraints(h, hd, dt) and ret
         if hasattr(self, "eq7f_constraints"):
-            ret = ret and self.check_eq7f_constraints(r, rd, dt)
+            ret = self.check_eq7f_constraints(r, rd, dt) and ret
         if hasattr(self, "eq7g_constraints"):
-            ret = ret and self.check_eq7g_constraints(rd, rdd, dt)
+            ret = self.check_eq7g_constraints(rd, rdd, dt) and ret
         if hasattr(self, "eq7h_constraints"):
-            ret = ret and self.check_eq7h_constraints(q, v, r)
+            ret = self.check_eq7h_constraints(q, v, r) and ret
         if hasattr(self, "eq7i_constraints"):
-            ret = ret and self.check_eq7i_constraints(q, v, c)
+            ret = self.check_eq7i_constraints(q, v, c) and ret
         if hasattr(self, "eq7j_constraints"):
-            ret = ret and self.check_eq7j_constraints(c)
+            ret = self.check_eq7j_constraints(c) and ret
         if hasattr(self, "eq7k_admissable_posture_constraints"):
-            ret = ret and self.check_eq7k_admissable_posture_constraints(q)
+            ret = self.check_eq7k_admissable_posture_constraints(q) and ret
         if hasattr(self, "eq7k_joint_velocity_constraints"):
-            ret = ret and self.check_eq7k_joint_velocity_constraints(v)
+            ret = self.check_eq7k_joint_velocity_constraints(v) and ret
         if hasattr(self, "eq7k_friction_cone_constraints"):
-            ret = ret and self.check_eq7k_friction_cone_constraints(F, beta)
+            ret = self.check_eq7k_friction_cone_constraints(F, beta) and ret
         if hasattr(self, "eq7k_beta_positive_constraints"):
-            ret = ret and self.check_eq7k_beta_positive_constraints(beta)
+            ret = self.check_eq7k_beta_positive_constraints(beta) and ret
         if hasattr(self, "eq7k_torque_constraints"):
-            ret = ret and self.check_eq7k_torque_constraints(tau, beta)
+            ret = self.check_eq7k_torque_constraints(tau, beta) and ret
         if hasattr(self, "eq8a_constraints"):
-            ret = ret and self.check_eq8a_constraints(F, c, eq8a_slack)
+            ret = self.check_eq8a_constraints(F, c, eq8a_slack) and ret
         if hasattr(self, "eq8b_constraints"):
-            ret = ret and self.check_eq8b_constraints(tau, c, eq8b_slack)
+            ret = self.check_eq8b_constraints(tau, c, eq8b_slack) and ret
         if hasattr(self, "eq8c_contact_force_constraints"):
-            ret = ret and self.check_eq8c_contact_force_constraints(F)
+            ret = self.check_eq8c_contact_force_constraints(F) and ret
         if hasattr(self, "eq8c_contact_distance_constraint"):
-            ret = ret and self.check_eq8c_contact_distance_constraints(c)
+            ret = self.check_eq8c_contact_distance_constraints(c) and ret
         if hasattr(self, "eq9a_constraints"):
-            ret = ret and self.check_eq9a_constraints(F, c, eq9a_slack)
+            ret = self.check_eq9a_constraints(F, c, eq9a_slack) and ret
         if hasattr(self, "eq9b_constraints"):
-            ret = ret and self.check_eq9b_constraints(F, c, eq9b_slack)
+            ret = self.check_eq9b_constraints(F, c, eq9b_slack) and ret
         # TODO:
         # slack_constraints
         # if hasattr(self, "contact_sequence_constraints"):
             # ret = ret and self.check_contact_sequence_constraints()
         if hasattr(self, "initial_pose_constraints"):
-            ret = ret and self.check_initial_pose_constraints(q)
+            ret = self.check_initial_pose_constraints(q) and ret
         if hasattr(self, "initial_velocity_constraints"):
-            ret = ret and self.check_initial_velocity_constraints(v)
+            ret = self.check_initial_velocity_constraints(v) and ret
         if hasattr(self, "final_pose_constraints"):
-            ret = ret and self.check_final_pose_constraints(q)
+            ret = self.check_final_pose_constraints(q) and ret
         if hasattr(self, "final_velocity_constraints"):
-            ret = ret and self.check_final_velocity_constraints(v)
+            ret = self.check_final_velocity_constraints(v) and ret
         if hasattr(self, "final_COM_velocity_constraints"):
-            ret = ret and self.check_final_COM_velocity_constraints(rd)
+            ret = self.check_final_COM_velocity_constraints(rd) and ret
         if hasattr(self, "final_COM_acceleration_constraints"):
-            ret = ret and self.check_final_COM_acceleration_constraints(rdd)
+            ret = self.check_final_COM_acceleration_constraints(rdd) and ret
         if hasattr(self, "final_centroidal_angular_momentum_constraints"):
-            ret = ret and self.check_final_centroidal_angular_momentum_constraints(h)
+            ret = self.check_final_centroidal_angular_momentum_constraints(h) and ret
         if hasattr(self, "final_centroidal_torque_constraints"):
-            ret = ret and self.check_final_centroidal_torque_constraints(hd)
+            ret = self.check_final_centroidal_torque_constraints(hd) and ret
         if hasattr(self, "max_time_constraints"):
-            ret = ret and self.check_max_time_constraints(dt)
+            ret = self.check_max_time_constraints(dt) and ret
         if hasattr(self, "timestep_constraints"):
-            ret = ret and self.check_timestep_constraints(dt)
+            ret = self.check_timestep_constraints(dt) and ret
         if hasattr(self, "joint_acceleration_constraints"):
-            ret = ret and self.check_joint_acceleration_constraints(v, dt)
+            ret = self.check_joint_acceleration_constraints(v, dt) and ret
         if hasattr(self, "unit_quaternion_constraints"):
-            ret = ret and self.check_unit_quaternion_constraints(q)
+            ret = self.check_unit_quaternion_constraints(q) and ret
         if hasattr(self, "angular_velocity_constraints"):
-            ret = ret and self.check_angular_velocity_constraints(v, w_axis, w_mag)
+            ret = self.check_angular_velocity_constraints(v, w_axis, w_mag) and ret
         if hasattr(self, "unit_axis_constraint"):
-            ret = ret and self.check_unit_axis_constraint(w_axis)
+            ret = self.check_unit_axis_constraint(w_axis) and ret
         if hasattr(self, "first_timestep_constraints"):
-            ret = ret and self.check_first_timestep_constraints(dt, v, w_mag, h, hd, rd, rdd)
+            ret = self.check_first_timestep_constraints(dt, v, w_mag, h, hd, rd, rdd) and ret
         return ret
 
     def add_eq10_cost(self):
