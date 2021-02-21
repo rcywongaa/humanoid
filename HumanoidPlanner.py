@@ -1226,7 +1226,7 @@ class HumanoidPlanner:
         ''' These constraints were not explicitly stated in the paper'''
         self.add_max_time_constraints(max_time)
         self.add_timestep_constraints()
-        self.add_first_timestep_constraints()
+        # self.add_first_timestep_constraints()
 
     def add_0th_order_constraints(self, q_init, q_final, pelvis_only):
 
@@ -1237,12 +1237,12 @@ class HumanoidPlanner:
 
         ''' These constraints were not explicitly stated in the paper'''
         self.add_initial_pose_constraints(q_init)
-        self.add_initial_velocity_constraints()
+        # self.add_initial_velocity_constraints()
         self.add_final_pose_constraints(q_final, pelvis_only)
-        self.add_final_velocity_constraints()
-        self.add_final_COM_velocity_constraints()
-        self.add_final_COM_acceleration_constraints()
-        self.add_final_centroidal_angular_momentum_constraints()
+        # self.add_final_velocity_constraints()
+        # self.add_final_COM_velocity_constraints()
+        # self.add_final_COM_acceleration_constraints()
+        # self.add_final_centroidal_angular_momentum_constraints()
         self.add_joint_acceleration_constraints()
         self.add_unit_quaternion_constraints()
         self.add_angular_velocity_constraints()
@@ -1253,9 +1253,9 @@ class HumanoidPlanner:
         self.add_eq7j_constraints()
         self.add_eq7k_admissable_posture_constraints()
         self.add_eq7k_joint_velocity_constraints()
-        self.add_eq7k_friction_cone_constraints()
-        self.add_eq7k_beta_positive_constraints()
-        self.add_eq7k_torque_constraints()
+        # self.add_eq7k_friction_cone_constraints()
+        # self.add_eq7k_beta_positive_constraints()
+        # self.add_eq7k_torque_constraints()
 
     def add_1st_order_constraints(self):
         self.add_eq7c_constraints()
@@ -1266,7 +1266,7 @@ class HumanoidPlanner:
 
     def add_2nd_order_constraints(self):
         self.add_eq7a_constraints()
-        self.add_eq7b_constraints()
+        # self.add_eq7b_constraints()
 
     def add_complementarity_constraints(self):
         self.add_eq8a_constraints()

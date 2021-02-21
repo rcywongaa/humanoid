@@ -687,7 +687,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         visualize(sol.q)
 
     def test_1st_order(self):
-        N = 20
+        N = 50
         self.planner.create_minimal_program(N, 0.5)
         q_init = default_q()
         q_init[6] = 1.5 # z position of pelvis
@@ -701,9 +701,10 @@ class TestHumanoidPlanner(unittest.TestCase):
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
         self.assertTrue(is_success)
         visualize(sol.q)
+        pdb.set_trace()
 
     def test_2nd_order(self):
-        N = 20
+        N = 50
         self.planner.create_minimal_program(N, 1.0)
         q_init = default_q()
         q_init[6] = 1.0 # z position of pelvis
@@ -716,8 +717,14 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
+        # if not is_success:
+            # self.fail("First order solution not found!")
+        # print("First order solution found!")
+        # is_success, sol = self.planner.solve(self.planner.create_guess(sol))
         self.assertTrue(is_success)
         visualize(sol.q)
+        pdb.set_trace()
+
     def test_contact_sequence_constraints(self):
         N = 50
         self.planner.create_minimal_program(N, 1.0)
@@ -739,7 +746,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         self.assertTrue(is_success)
 
     def test_complementarity_constraints(self):
-        N = 20
+        N = 50
         self.planner.create_minimal_program(N, 1.0)
         q_init = default_q()
         q_init[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
@@ -754,8 +761,6 @@ class TestHumanoidPlanner(unittest.TestCase):
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
         if not is_success:
             self.fail("Failed to find non-complementarity solution!")
-
-        pdb.set_trace()
 
         print("Non-complementarity solution found!")
         self.planner.add_eq8a_constraints()
