@@ -782,6 +782,8 @@ class HumanoidPlanner:
         self.prog.AddConstraint(ge(self.eq8a_slack, 0))
         self.prog.AddConstraint(ge(self.eq8b_slack, 0))
         # Note that eq9a_slack, eq9b_slack can be negative
+        self.prog.AddConstraint(eq(self.eq9a_slack, 0))
+        self.prog.AddConstraint(eq(self.eq9b_slack, 0))
 
     # TODO: Constrain foot placement exactly
     def create_stance_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
