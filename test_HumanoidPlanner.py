@@ -726,7 +726,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         pdb.set_trace()
 
     def test_contact_sequence_constraints(self):
-        N = 50
+        N = 100
         self.planner.create_minimal_program(N, 1.0)
         q_init = default_q()
         q_init[6] = Atlas.PELVIS_HEIGHT # z position of pelvis

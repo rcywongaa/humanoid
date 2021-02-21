@@ -812,21 +812,21 @@ class HumanoidPlanner:
         right_foot_start_idx = int(self.num_contacts/2)
         self.contact_sequence_constraints = []
         for k in range(self.N):
-            if k < int(self.N/5):
+            if k < 1:
                 # Double stance
                 double_stance_constraints = self.create_stance_constraint(k, name="both 1")
                 self.contact_sequence_constraints.append(double_stance_constraints)
-            elif k < int(2*self.N/5):
+            elif k < int(self.N/3):
                 # Left swing, right stance
                 left_swing_constraints = self.create_swing_constraint(k, 0, right_foot_start_idx, name="left")
                 self.contact_sequence_constraints.append(left_swing_constraints)
                 right_stance_constraints = self.create_stance_constraint(k, right_foot_start_idx, -1, name="right")
                 self.contact_sequence_constraints.append(right_stance_constraints)
-            elif k < int(3*self.N/5):
+            elif k < int(2*self.N/3):
                 # Double stance
                 double_stance_constraints = self.create_stance_constraint(k,name="both 2")
                 self.contact_sequence_constraints.append(double_stance_constraints)
-            elif k < int(4*self.N/5):
+            elif k < int(3*self.N/3)-1:
                 # Left stance right swing
                 left_stance_constraints = self.create_stance_constraint(k, 0, right_foot_start_idx, name="left")
                 self.contact_sequence_constraints.append(left_stance_constraints)
