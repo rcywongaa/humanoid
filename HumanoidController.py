@@ -13,7 +13,7 @@ Convert to time-varying y_desired and z_com
 '''
 
 from Atlas import load_atlas, set_atlas_initial_pose
-from Atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
+from Atlas import getJointLimitsSortedByActuator, getActuatorIndex, getJointValues, getJointIndexInGeneralizedVelocities
 from Atlas import Atlas
 import numpy as np
 from pydrake.systems.framework import DiagramBuilder
@@ -140,7 +140,7 @@ class HumanoidController(LeafSystem):
         self.B_a_inv = np.linalg.inv(self.B_a)
 
         # Sort joint effort limits to be the same order as tau in Eq(13)
-        self.sorted_max_efforts = np.array([entry[1].effort for entry in getSortedJointLimits(self.plant)])
+        self.sorted_max_efforts = np.array([entry[1].effort for entry in getJointLimitsSortedByActuator(self.plant)])
 
     def create_qp1(self, plant_context, V, q_des, v_des, vd_des):
         # Determine contact points
@@ -330,7 +330,8 @@ class HumanoidController(LeafSystem):
             # Get the corresponding actuator index
             act_idx = getActuatorIndex(self.plant, name)
             # Use the actuator index to find the corresponding generalized coordinate index
-            q_idx = np.where(B_7[:,act_idx] == 1)[0][0]
+            # q_idx = np.where(B_7[:,act_idx] == 1)[0][0]
+            q_idx = getJointIndexInGeneralizedVelocities(self.plant, name)
 
             if joint_pos >= limit.upper:
                 # print(f"Joint {name} max reached")

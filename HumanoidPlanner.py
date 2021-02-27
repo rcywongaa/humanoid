@@ -7,7 +7,7 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 '''
 
 from Atlas import load_atlas, set_atlas_initial_pose
-from Atlas import getSortedJointLimits, getActuatorIndex, getActuatorIndices, getJointValues
+from Atlas import getJointLimitsSortedByPosition, getJointValues
 from Atlas import Atlas
 from pydrake.all import Quaternion, AddUnitQuaternionConstraintOnPlant, RotationMatrix
 from pydrake.all import Multiplexer
@@ -181,9 +181,9 @@ class HumanoidPlanner:
         self.context_autodiff = self.plant_autodiff.CreateDefaultContext()
         self.q_nom = q_nom
 
-        self.sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getSortedJointLimits(self.plant_float)])
-        self.sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getSortedJointLimits(self.plant_float)])
-        self.sorted_joint_velocity_limits = np.array([entry[1].velocity for entry in getSortedJointLimits(self.plant_float)])
+        self.sorted_joint_position_lower_limits = np.array([entry[1].lower for entry in getJointLimitsSortedByPosition(self.plant_float)])
+        self.sorted_joint_position_upper_limits = np.array([entry[1].upper for entry in getJointLimitsSortedByPosition(self.plant_float)])
+        self.sorted_joint_velocity_limits = np.array([entry[1].velocity for entry in getJointLimitsSortedByPosition(self.plant_float)])
 
         self.contacts_per_frame = contacts_per_frame
         self.num_contacts = sum([contact_points.shape[1] for contact_points in contacts_per_frame.values()])

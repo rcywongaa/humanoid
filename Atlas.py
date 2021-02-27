@@ -103,11 +103,29 @@ class Atlas():
     POS_Y_IDX = 5
     POS_Z_IDX = 6
 
+def getAllJointIndicesInGeneralizedPositions(plant):
+    for joint_limit in Atlas.JOINT_LIMITS.items():
+        index = getJointIndexInGeneralizedPositions(plant, joint_limit[0])
+        print(f"{joint_limit[0]}: {index}")
+
 def getActuatorIndex(plant, joint_name):
     return int(plant.GetJointActuatorByName(joint_name + "_motor").index())
 
-def getSortedJointLimits(plant):
+def getJointLimitsSortedByActuator(plant):
     return sorted(Atlas.JOINT_LIMITS.items(), key=lambda entry : getActuatorIndex(plant, entry[0]))
+
+def getJointIndexInGeneralizedPositions(plant, joint_name):
+    return int(plant.GetJointByName(joint_name).position_start())
+
+def getJointIndexInGeneralizedVelocities(plant, joint_name):
+    return getJointIndexInGeneralizedPositions(plant, joint_name) - 1
+
+'''
+Returns the joint limits sorted by their position in the generalized positions
+'''
+def getJointLimitsSortedByPosition(plant):
+    return sorted(Atlas.JOINT_LIMITS.items(),
+        key=lambda entry : getJointIndexInGeneralizedPositions(plant, entry[0]))
 
 def getJointValues(plant, joint_names, context):
     ret = []
@@ -116,12 +134,9 @@ def getJointValues(plant, joint_names, context):
     return ret
 
 
-def getActuatorIndices(plant, joint_names):
-    ret = []
-    for name in joint_names:
-        idx = getActuatorIndex(plant, name)
-        ret.append(idx)
-    return ret
+def setJointValues(plant, joint_values, context):
+    for i in range(len(joint_values)):
+        plant.GetJointByIndex(i).set_angle(context, joint_values[i])
 
 # plant is modified in place
 def load_atlas(plant, add_ground=False):

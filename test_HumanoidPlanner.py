@@ -5,7 +5,7 @@ from pydrake.all import DiagramBuilder, AddMultibodyPlantSceneGraph, ConnectDrak
 from pydrake.all import MathematicalProgram
 from pydrake.all import Quaternion, RollPitchYaw
 import numpy as np
-from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getActuatorIndex, set_null_input
+from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getJointIndexInGeneralizedPositions, set_null_input
 import unittest
 import pdb
 import time
@@ -680,7 +680,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[0:4] = Quaternion(RollPitchYaw([2*np.pi, np.pi, np.pi/2]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 1.0 # x position of pelvis
         q_final[6] = 2.0 # z position of pelvis
-        q_final[15] = np.pi/4 # right hip joint swing back
+        q_final[getJointIndexInGeneralizedPositions(self.planner.plant_float, "r_leg_hpy")] = np.pi/6
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
         self.assertTrue(is_success)
@@ -695,7 +695,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[0:4] = Quaternion(RollPitchYaw([2*np.pi, np.pi, np.pi/2]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 1.0 # x position of pelvis
         q_final[6] = 2.0 # z position of pelvis
-        q_final[15] = np.pi/4 # right hip joint swing back
+        q_final[getJointIndexInGeneralizedPositions(self.planner.plant_float, "r_leg_hpy")] = np.pi/6
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         self.planner.add_1st_order_constraints()
         is_success, sol = self.planner.solve(self.planner.create_initial_guess())
@@ -712,7 +712,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, np.pi/6]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 1.0 # x position of pelvis
         q_final[6] = 1.5 # z position of pelvis
-        q_final[15] = np.pi/4 # right hip joint swing back
+        q_final[getJointIndexInGeneralizedPositions(self.planner.plant_float, "r_leg_hpy")] = np.pi/6
         self.planner.add_0th_order_constraints(q_init, q_final, False)
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
