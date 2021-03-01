@@ -789,24 +789,25 @@ class HumanoidPlanner:
     def create_stance_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
         cj = self.reshape_3d_contact(self.c[k])
         Fj = self.reshape_3d_contact(self.F[k])
-        tau = self.tau
-        stance_position_constraint = self.prog.AddLinearConstraint(eq(cj[contact_start_idx:contact_end_idx,2], 0.0))
-        stance_position_constraint.evaluator().set_description(f"{name} stance position constraint")
-        stance_force_constraint = self.prog.AddLinearConstraint(ge(Fj[contact_start_idx:contact_end_idx,2], 0.0))
-        stance_force_constraint.evaluator().set_description(f"{name} stance force constraint")
-        return (stance_position_constraint, stance_force_constraint)
+        # position_constraint = self.prog.AddLinearConstraint(eq(cj[contact_start_idx:contact_end_idx,2], 0.0))
+        # position_constraint.evaluator().set_description(f"{name} stance position constraint")
+        force_constraint = self.prog.AddLinearConstraint(ge(Fj[contact_start_idx:contact_end_idx,2], 0.0))
+        force_constraint.evaluator().set_description(f"{name} stance force constraint")
+        # return (position_constraint, force_constraint)
+        return (force_constraint)
 
     def create_swing_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
         cj = self.reshape_3d_contact(self.c[k])
         Fj = self.reshape_3d_contact(self.F[k])
         tau = self.tau[k]
-        stance_position_constraint = self.prog.AddLinearConstraint(ge(cj[contact_start_idx:contact_end_idx,2], 0.0))
-        stance_position_constraint.evaluator().set_description(f"{name} swing position constraint")
-        stance_force_constraint = self.prog.AddLinearConstraint(eq(Fj[contact_start_idx:contact_end_idx,2], 0.0))
-        stance_force_constraint.evaluator().set_description(f"{name} swing force constraint")
-        stance_torque_constraint = self.prog.AddLinearConstraint(eq(tau[contact_start_idx:contact_end_idx], 0.0))
-        stance_torque_constraint.evaluator().set_description(f"{name} swing torque constraint")
-        return (stance_position_constraint, stance_force_constraint, stance_torque_constraint)
+        # position_constraint = self.prog.AddLinearConstraint(ge(cj[contact_start_idx:contact_end_idx,2], 0.0))
+        # position_constraint.evaluator().set_description(f"{name} swing position constraint")
+        force_constraint = self.prog.AddLinearConstraint(eq(Fj[contact_start_idx:contact_end_idx,2], 0.0))
+        force_constraint.evaluator().set_description(f"{name} swing force constraint")
+        # torque_constraint = self.prog.AddLinearConstraint(eq(tau[contact_start_idx:contact_end_idx], 0.0))
+        # torque_constraint.evaluator().set_description(f"{name} swing torque constraint")
+        # return (position_constraint, force_constraint, torque_constraint)
+        return (force_constraint)
 
     def add_contact_sequence_constraints(self):
         right_foot_start_idx = int(self.num_contacts/2)
@@ -1304,7 +1305,7 @@ class HumanoidPlanner:
         # (self.prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
                 # .evaluator().set_description("max beta"))
 
-    def create_initial_guess(self):
+    def create_initial_guess(self, check_violations=True):
         ''' Guess '''
         dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
 
@@ -1394,12 +1395,13 @@ class HumanoidPlanner:
             eq9b_slack = eq9b_slack_guess
         )
 
-        initial_guess = self.create_guess(guess_solution)
+        initial_guess = self.create_guess(guess_solution, check_violations)
         return initial_guess
 
-    def create_guess(self, guess_solution):
-        print("Checking guess violations...")
-        self.check_all_constraints(guess_solution)
+    def create_guess(self, guess_solution, check_violations=True):
+        if check_violations:
+            print("Checking guess violations...")
+            self.check_all_constraints(guess_solution)
 
         dt_guess = guess_solution.dt
         q_guess = guess_solution.q
