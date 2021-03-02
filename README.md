@@ -8,7 +8,6 @@
 1. Given ZMP trajectory and footstep sequence, generate torque outputs (`HumanoidController.py`)
    - An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion (Scott Kuindersma, Frank Permenter, and Russ Tedrake)
 
-
 ## Setup
 
 ### Install drake
@@ -47,8 +46,14 @@ sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
 
 ### HumanoidPlanner (WIP)
 #### Problems
-- Optimization program fails
-- For some reason, program seems to actively avoid feet touching ground
+- Both complementarity version and contact sequence version fails
+- Test with
+  ```
+  python3 test_HumanoidPlanner.py TestHumanoidPlanner.test_contact_sequence_constraints
+  ```
+  ```
+  python3 test_HumanoidPlanner.py TestHumanoidPlanner.test_complementarity_constraints
+  ```
 
 ## Troubleshooting
 
