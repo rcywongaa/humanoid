@@ -733,7 +733,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final = default_q()
         q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 0.2 # x position of pelvis
-        q_final[6] = 1.5 # z position of pelvis
+        q_final[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
         self.planner.add_0th_order_constraints(q_init, q_final, True)
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
@@ -754,7 +754,7 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 0.5 # x position of pelvis
         q_final[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
-        self.planner.add_0th_order_constraints(q_init, q_final, False)
+        self.planner.add_0th_order_constraints(q_init, q_final, True)
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
         self.planner.add_slack_constraints()

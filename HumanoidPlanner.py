@@ -786,11 +786,12 @@ class HumanoidPlanner:
         self.prog.AddConstraint(eq(self.eq9b_slack, 0))
 
     # TODO: Constrain foot placement exactly
+    # FIXME: This is missing no-slip constraint
     def create_stance_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
         cj = self.reshape_3d_contact(self.c[k])
         Fj = self.reshape_3d_contact(self.F[k])
-        # position_constraint = self.prog.AddLinearConstraint(eq(cj[contact_start_idx:contact_end_idx,2], 0.0))
-        # position_constraint.evaluator().set_description(f"{name} stance position constraint")
+        position_constraint = self.prog.AddLinearConstraint(eq(cj[contact_start_idx:contact_end_idx,2], 0.0))
+        position_constraint.evaluator().set_description(f"{name} stance position constraint")
         force_constraint = self.prog.AddLinearConstraint(ge(Fj[contact_start_idx:contact_end_idx,2], 0.0))
         force_constraint.evaluator().set_description(f"{name} stance force constraint")
         # return (position_constraint, force_constraint)
@@ -800,8 +801,8 @@ class HumanoidPlanner:
         cj = self.reshape_3d_contact(self.c[k])
         Fj = self.reshape_3d_contact(self.F[k])
         tau = self.tau[k]
-        # position_constraint = self.prog.AddLinearConstraint(ge(cj[contact_start_idx:contact_end_idx,2], 0.0))
-        # position_constraint.evaluator().set_description(f"{name} swing position constraint")
+        position_constraint = self.prog.AddLinearConstraint(ge(cj[contact_start_idx:contact_end_idx,2], 0.0))
+        position_constraint.evaluator().set_description(f"{name} swing position constraint")
         force_constraint = self.prog.AddLinearConstraint(eq(Fj[contact_start_idx:contact_end_idx,2], 0.0))
         force_constraint.evaluator().set_description(f"{name} swing force constraint")
         # torque_constraint = self.prog.AddLinearConstraint(eq(tau[contact_start_idx:contact_end_idx], 0.0))
@@ -1246,7 +1247,7 @@ class HumanoidPlanner:
         # self.add_final_COM_velocity_constraints()
         # self.add_final_COM_acceleration_constraints()
         # self.add_final_centroidal_angular_momentum_constraints()
-        self.add_joint_acceleration_constraints()
+        # self.add_joint_acceleration_constraints()
         self.add_unit_quaternion_constraints()
         self.add_angular_velocity_constraints()
         self.add_unit_axis_constraint()
