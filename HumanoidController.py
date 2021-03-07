@@ -27,6 +27,7 @@ from pydrake.systems.analysis import Simulator
 from pydrake.systems.framework import BasicVector, LeafSystem
 from pydrake.common.eigen_geometry import Quaternion
 from pydrake.all import eq, le, ge
+from pydrake.all import ExternallyAppliedSpatialForce, SpatialForce, Value, List
 
 import time
 import pdb
@@ -126,7 +127,7 @@ class HumanoidController(LeafSystem):
                 def dJ_dx(x):
                     return x.T.dot(S.T+S) # https://math.stackexchange.com/questions/20694/vector-derivative-w-r-t-its-transpose-fracdaxdxt
                 y_bar = y - y_des
-                x_bar = x - np.concatenate([y_des, [0.0, 0.0]])
+                x_bar = x - np.concatenate([y_des, [0.0, 0.0]]) # FIXME: This doesn't seem right...
                 # FIXME: xd_bar should depend on yd_des
                 xd_bar = A.dot(x_bar) + B_1.dot(u)
                 return y_bar.T.dot(Q).dot(y_bar) + dJ_dx(x_bar).dot(xd_bar)
@@ -424,6 +425,52 @@ class HumanoidController(LeafSystem):
                 .dot(qdd_sol))
         return com, com_d, com_dd
 
+def rand_float(start, end):
+    return (np.random.rand() * (end - start)) + start
+
+class ForceDisturber(LeafSystem):
+    def __init__(self, target_body_index, start_time, disturb_duration, disturb_period):
+        LeafSystem.__init__(self)
+        self.target_body_index = target_body_index
+        self.disturb_duration = disturb_duration
+        self.disturb_period = disturb_period
+        self.start_time = start_time
+        forces_cls = Value[List[ExternallyAppliedSpatialForce]]
+        self.DeclareAbstractOutputPort(
+            "spatial_forces_vector",
+            lambda: forces_cls(),
+            self.DoCalcAbstractOutput)
+        self.last_disturb_time = None
+        self.start_disturb_time = None
+        self.force = [0.0, 0.0, 0.0]
+
+    def DoCalcAbstractOutput(self, context, spatial_forces_vector):
+        curr_time = context.get_time()
+        if curr_time > self.start_time:
+            test_force = ExternallyAppliedSpatialForce()
+            test_force.body_index = self.target_body_index
+            test_force.p_BoBq_B = np.zeros(3)
+            if self.last_disturb_time is None or curr_time - self.last_disturb_time > self.disturb_period:
+                self.last_disturb_time = curr_time
+                self.start_disturb_time = curr_time
+                self.last_disturb_time = curr_time
+                # self.force = [rand_float(-5, 5), rand_float(-10, 10), 0.0]
+                self.force = [5.0, 20.0, 0.0]
+
+            if self.start_disturb_time is not None and curr_time - self.start_disturb_time < self.disturb_duration:
+                print(f"Disturbing with {self.force}")
+                test_force.F_Bq_W = SpatialForce(
+                    tau=[0., 0., 0.], f=self.force)
+            else:
+                self.start_disturb_time = None
+                test_force.F_Bq_W = SpatialForce(
+                    tau=[0., 0., 0.], f=[0., 0., 0.])
+
+            spatial_forces_vector.set_value([test_force])
+
+        else:
+            spatial_forces_vector.set_value([])
+
 def main():
     builder = DiagramBuilder()
     sim_plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
@@ -434,6 +481,10 @@ def main():
     load_atlas(controller_plant)
     controller = builder.AddSystem(HumanoidController(controller_plant, Atlas.CONTACTS_PER_FRAME, is_wbc=False))
     controller.set_name("HumanoidController")
+
+    disturber = builder.AddSystem(ForceDisturber(
+        sim_plant.GetBodyByName("utorso").index(), 2, 0.5, 4))
+    builder.Connect(disturber.get_output_port(0), sim_plant.get_applied_spatial_force_input_port())
 
     builder.Connect(sim_plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), sim_plant.get_actuation_input_port())
@@ -449,7 +500,7 @@ def main():
 
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.1)
-    simulator.AdvanceTo(5.0)
+    simulator.AdvanceTo(10.0)
 
 if __name__ == "__main__":
     main()
