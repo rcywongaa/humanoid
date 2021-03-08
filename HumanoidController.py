@@ -16,6 +16,7 @@ from Atlas import load_atlas, set_atlas_initial_pose
 from Atlas import getJointLimitsSortedByActuator, getActuatorIndex, getJointValues, getJointIndexInGeneralizedVelocities
 from Atlas import Atlas
 import numpy as np
+import random
 from pydrake.systems.framework import DiagramBuilder
 from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
 from pydrake.systems.controllers import LinearQuadraticRegulator
@@ -236,7 +237,7 @@ class HumanoidController(LeafSystem):
         w = 0.01
         epsilon = 1.0e-8
         K_p = 10.0
-        K_d = 2.0
+        K_d = 4.0
         frame_weights = np.ones((Atlas.TOTAL_DOF))
 
         q = self.plant.GetPositions(plant_context)
@@ -244,7 +245,7 @@ class HumanoidController(LeafSystem):
 
         # Convert q, q_nom to generalized velocities form
         q_err = self.plant.MapQDotToVelocity(plant_context, q_des - q)
-        print(f"Pelvis error: {q_err[0:3]}")
+        # print(f"Pelvis error: {q_err[0:3]}")
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
         ignored_pose_indices = {} # Ignore x position, y position
@@ -428,6 +429,10 @@ class HumanoidController(LeafSystem):
 def rand_float(start, end):
     return (np.random.rand() * (end - start)) + start
 
+def rand_2d_vec(mag):
+    angle = rand_float(-np.pi, np.pi)
+    return [mag*np.cos(angle), mag*np.sin(angle)]
+
 class ForceDisturber(LeafSystem):
     def __init__(self, target_body_index, start_time, disturb_duration, disturb_period):
         LeafSystem.__init__(self)
@@ -449,23 +454,23 @@ class ForceDisturber(LeafSystem):
         if curr_time > self.start_time:
             test_force = ExternallyAppliedSpatialForce()
             test_force.body_index = self.target_body_index
-            test_force.p_BoBq_B = np.zeros(3)
             if self.last_disturb_time is None or curr_time - self.last_disturb_time > self.disturb_period:
                 self.last_disturb_time = curr_time
                 self.start_disturb_time = curr_time
                 self.last_disturb_time = curr_time
-                # self.force = [rand_float(-5, 5), rand_float(-10, 10), 0.0]
-                self.force = [5.0, 20.0, 0.0]
+                self.force = rand_2d_vec(80) + [0.0]
+                self.position = [0.0, rand_float(-0.2, 0.2), rand_float(0.0, 0.5)]
+                print(f"{curr_time}: Disturbing with {self.force} at {self.position}")
+                # self.force = [5.0, 50.0, 0.0]
 
-            if self.start_disturb_time is not None and curr_time - self.start_disturb_time < self.disturb_duration:
-                print(f"Disturbing with {self.force}")
-                test_force.F_Bq_W = SpatialForce(
-                    tau=[0., 0., 0.], f=self.force)
-            else:
+            if self.start_disturb_time is not None and curr_time - self.start_disturb_time > self.disturb_duration:
                 self.start_disturb_time = None
-                test_force.F_Bq_W = SpatialForce(
-                    tau=[0., 0., 0.], f=[0., 0., 0.])
+                self.force = [0.0, 0.0, 0.0]
+                print(f"Stop disturbing")
 
+            test_force.p_BoBq_B = self.position
+            test_force.F_Bq_W = SpatialForce(
+                tau=[0., 0., 0.], f=self.force)
             spatial_forces_vector.set_value([test_force])
 
         else:
@@ -483,7 +488,7 @@ def main():
     controller.set_name("HumanoidController")
 
     disturber = builder.AddSystem(ForceDisturber(
-        sim_plant.GetBodyByName("utorso").index(), 2, 0.5, 4))
+        sim_plant.GetBodyByName("utorso").index(), 4, 0.1, 2))
     builder.Connect(disturber.get_output_port(0), sim_plant.get_applied_spatial_force_input_port())
 
     builder.Connect(sim_plant.get_state_output_port(), controller.GetInputPort("q_v"))
@@ -499,8 +504,8 @@ def main():
     controller.GetInputPort("y_des").FixValue(controller_context, np.array([0.1, 0.0]))
 
     simulator = Simulator(diagram, diagram_context)
-    simulator.set_target_realtime_rate(0.1)
-    simulator.AdvanceTo(10.0)
+    simulator.set_target_realtime_rate(0.04)
+    simulator.AdvanceTo(20.0)
 
 if __name__ == "__main__":
     main()

@@ -41,9 +41,9 @@ sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
 1. Run `python3 HumanoidController.py`
 
 ### HumanoidController
-(Sped up 30x)
-
-![HumanoidController](resources/output.gif)
+#### Disturbance Rejection (Sped up 40x)
+- Formulate-Solve Time: 0.04s
+![Disturbance](resources/disturbance.gif)
 
 ### HumanoidPlanner (WIP)
 #### Problems
