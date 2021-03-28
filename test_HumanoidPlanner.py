@@ -19,33 +19,6 @@ g_vec = np.array([0, 0, -g])
 mbp_time_step = 1.0e-3
 epsilon = 1e-5
 
-def visualize(q, dt=None):
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
-    load_atlas(plant, add_ground=True)
-    plant_context = plant.CreateDefaultContext()
-    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
-    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
-    diagram = builder.Build()
-
-    if len(q.shape) == 1:
-        q = np.reshape(q, (1, -1))
-
-    for i in range(q.shape[0]):
-        print(f"knot point: {i}")
-        diagram_context = diagram.CreateDefaultContext()
-        plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
-        set_null_input(plant, plant_context)
-
-        plant.SetPositions(plant_context, q[i])
-        simulator = Simulator(diagram, diagram_context)
-        simulator.set_target_realtime_rate(0.0)
-        simulator.AdvanceTo(0)
-        if not dt is None:
-            time.sleep(5/(np.sum(dt))*dt[i])
-        else:
-            time.sleep(0.5)
-
 def assert_autodiff_array_almost_equal(autodiff_array, float_array):
     float_array = np.array([i.value() for i in autodiff_array])
     np.testing.assert_array_almost_equal(float_array, float_array)

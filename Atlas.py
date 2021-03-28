@@ -8,11 +8,12 @@ from pydrake.multibody.parsing import Parser
 from pydrake.systems.analysis import Simulator
 from pydrake.all import MultibodyPlant
 from pydrake.systems.framework import DiagramBuilder
-from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph, HalfSpace, Box
+from pydrake.all import ConnectDrakeVisualizer, SceneGraph, HalfSpace, Box, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph, CoulombFriction
 from pydrake.systems.analysis import Simulator
 from pydrake.math import RollPitchYaw
 from typing import NamedTuple
+import time
 
 '''
 Floating base is attached at the pelvis link
@@ -168,6 +169,32 @@ def set_null_input(plant, plant_context):
     tau = np.zeros(plant.num_actuated_dofs())
     plant.get_actuation_input_port().FixValue(plant_context, tau)
 
+def visualize(q, dt=None):
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(0.001))
+    load_atlas(plant, add_ground=True)
+    plant_context = plant.CreateDefaultContext()
+    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
+    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
+    diagram = builder.Build()
+
+    if len(q.shape) == 1:
+        q = np.reshape(q, (1, -1))
+
+    for i in range(q.shape[0]):
+        print(f"knot point: {i}")
+        diagram_context = diagram.CreateDefaultContext()
+        plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
+        set_null_input(plant, plant_context)
+
+        plant.SetPositions(plant_context, q[i])
+        simulator = Simulator(diagram, diagram_context)
+        simulator.set_target_realtime_rate(0.0)
+        simulator.AdvanceTo(0.0001)
+        if not dt is None:
+            time.sleep(5/(np.sum(dt))*dt[i])
+        else:
+            time.sleep(0.5)
 
 if __name__ == "__main__":
     builder = DiagramBuilder()
