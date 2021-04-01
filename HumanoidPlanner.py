@@ -6,12 +6,12 @@ Whole-body Motion Planning with Centroidal Dynamics and Full Kinematics
 by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 '''
 
-from Atlas import load_atlas, set_atlas_initial_pose
+from Atlas import load_atlas, set_atlas_initial_pose, visualize
 from Atlas import getJointLimitsSortedByPosition, getJointValues
 from Atlas import Atlas
 from pydrake.all import Quaternion, AddUnitQuaternionConstraintOnPlant, RotationMatrix
 from pydrake.all import Multiplexer
-from pydrake.all import PiecewisePolynomial, PiecewiseTrajectory, PiecewiseQuaternionSlerp, TrajectorySource
+from pydrake.all import PiecewisePolynomial, PiecewiseQuaternionSlerp, TrajectorySource
 from pydrake.all import AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
 from pydrake.all import DiagramBuilder, MultibodyPlant, BasicVector, LeafSystem
 from pydrake.all import MathematicalProgram, Solve, eq, le, ge, SolverOptions
@@ -19,6 +19,7 @@ from pydrake.all import IpoptSolver
 from pydrake.all import SnoptSolver
 from pydrake.all import Quaternion_, AutoDiffXd
 from HumanoidController import HumanoidController
+from PoseGenerator import PoseGenerator, Trajectory
 import numpy as np
 import time
 import pdb
@@ -159,6 +160,9 @@ def check_constraint(constraint, input_map):
         print(f"{constraint.evaluator().get_description()} violated!")
         return False
 
+'''
+Recursively flatten containers
+'''
 def flatten(container):
     for i in container:
         if isinstance(i, (list,tuple)):
@@ -1306,18 +1310,26 @@ class HumanoidPlanner:
         # (self.prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
                 # .evaluator().set_description("max beta"))
 
-    def create_initial_guess(self, check_violations=True):
-        ''' Guess '''
-        dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
-
+    def create_q_v_w_guess(self):
         # Guess q to avoid initializing with invalid quaternion
         quat_traj_guess = PiecewiseQuaternionSlerp(breaks=[0, self.T], quaternions=[Quaternion(self.q_init[0:4]), Quaternion(self.q_final[0:4])])
         position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([self.q_init[4:], self.q_final[4:]]).T)
+
+        '''
+        We cannot use Quaternion(quat_traj_guess.value(t)).wxyz()
+        See https://github.com/RobotLocomotion/drake/issues/14561
+        '''
         q_guess = np.array([np.hstack([
-            # We cannot use Quaternion(quat_traj_guess.value(t)).wxyz()
-            # See https://github.com/RobotLocomotion/drake/issues/14561
             RotationMatrix(quat_traj_guess.value(t)).ToQuaternion().wxyz(), position_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
+
+        v_guess, w_mag_guess, w_axis_guess = self.create_v_w_guess_from_q(q_guess)
+        return q_guess, v_guess, w_mag_guess, w_axis_guess
+
+    def create_v_w_guess_from_q(self, q_guess):
+        breaks = np.linspace(0, self.T, self.N)
+        quat_traj_guess = PiecewiseQuaternionSlerp(breaks, quaternions=[Quaternion(q[0:4]) for q in q_guess])
+        position_traj_guess = PiecewisePolynomial.FirstOrderHold(breaks, np.vstack([q[4:] for q in q_guess]).T)
 
         v_traj_guess = position_traj_guess.MakeDerivative()
         w_traj_guess = quat_traj_guess.MakeDerivative()
@@ -1332,6 +1344,43 @@ class HumanoidPlanner:
                 w_axis_guess[k] = [1.0, 0.0, 0.0]
             else:
                 w_axis_guess[k] = v_guess[k][0:3] / w_mag_guess[k]
+        return v_guess, w_mag_guess, w_axis_guess
+
+    def create_initial_guess(self, check_violations=True):
+        dt_guess = [0.0] + [self.T/(self.N-1)] * (self.N-1)
+
+        ''' 
+        Create feasible IK guess
+        '''
+        l_foot_pos_traj = PiecewisePolynomial.FirstOrderHold(np.linspace(0, self.T, 5), np.array([
+            [0.00, 0.09, 0.01],
+            [0.25, 0.09, 0.11],
+            [0.50, 0.09, 0.01],
+            [0.50, 0.09, 0.01],
+            [0.50, 0.09, 0.01]]).T)
+        r_foot_pos_traj = PiecewisePolynomial.FirstOrderHold(np.linspace(0, self.T, 5), np.array([
+            [0.00, -0.09, 0.01],
+            [0.00, -0.09, 0.01],
+            [0.00, -0.09, 0.01],
+            [0.25, -0.09, 0.11],
+            [0.50, -0.09, 0.01]]).T)
+        pelvis_pos_traj = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.array([
+            [0.00, 0.00, Atlas.PELVIS_HEIGHT-0.1],
+            [0.50, 0.00, Atlas.PELVIS_HEIGHT-0.1]]).T)
+        null_orientation_traj = PiecewiseQuaternionSlerp([0.0, self.T], [
+            Quaternion([1.0, 0.0, 0.0, 0.0]),
+            Quaternion([1.0, 0.0, 0.0, 0.0])])
+
+        generator = PoseGenerator(self.plant_float, [
+            Trajectory('l_foot', Atlas.FOOT_OFFSET, l_foot_pos_traj, 1e-3, null_orientation_traj, 0.05),
+            Trajectory('r_foot', Atlas.FOOT_OFFSET, r_foot_pos_traj, 1e-3, null_orientation_traj, 0.05),
+            Trajectory('pelvis', np.zeros(3), pelvis_pos_traj, 1e-2, null_orientation_traj, 0.2)])
+
+        q_guess = np.array([
+            generator.get_ik(t) for t in np.linspace(0, self.T, self.N)])
+        v_guess, w_mag_guess, w_axis_guess = self.create_v_w_guess_from_q(q_guess)
+
+        # q_guess, v_guess, w_mag_guess, w_axis_guess = self.create_q_v_w_guess()
 
         c_guess = np.array([
             self.get_contact_positions(q_guess[i], v_guess[i]).T.flatten() for i in range(self.N)])
@@ -1450,11 +1499,8 @@ class HumanoidPlanner:
 
         ''' Solve '''
         solver = SnoptSolver()
-        # solver = IpoptSolver()
         options = SolverOptions()
-        # options.SetOption(solver.solver_id(), "max_iter", 50000)
-        # This doesn't seem to do anything...
-        # options.SetOption(CommonSolverOption.kPrintToConsole, True)
+        options.SetOption(solver.solver_id(), "print file", "output.txt")
         start_solve_time = time.time()
         print(f"Start solving...")
         result = solver.Solve(self.prog, initial_guess, options)

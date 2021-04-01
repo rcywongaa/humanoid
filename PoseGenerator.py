@@ -28,21 +28,22 @@ class PoseGenerator:
     ----------
     trajectories : Trajectory
     '''
-    def __init__(self, plant, trajectories):
+    def __init__(self, plant, trajectories, q_guess=None):
         self.plant = plant
         self.trajectories = trajectories
+        self.q_guess = q_guess
         pass
 
-    def get_ik(self, t, q_guess=None):
+    def get_ik(self, t):
         epsilon = 1e-2
         ik = InverseKinematics(plant=self.plant, with_joint_limits=True)
 
-        if q_guess is None:
+        if self.q_guess is None:
             context = self.plant.CreateDefaultContext()
-            q_guess = self.plant.GetPositions(context)
+            self.q_guess = self.plant.GetPositions(context)
             # This helps get the solver out of the saddle point when knee joint are locked (0.0)
-            q_guess[getJointIndexInGeneralizedPositions(self.plant, 'l_leg_kny')] = 0.1
-            q_guess[getJointIndexInGeneralizedPositions(self.plant, 'r_leg_kny')] = 0.1
+            self.q_guess[getJointIndexInGeneralizedPositions(self.plant, 'l_leg_kny')] = 0.1
+            self.q_guess[getJointIndexInGeneralizedPositions(self.plant, 'r_leg_kny')] = 0.1
 
         for trajectory in self.trajectories:
             position = trajectory.position_traj.value(t)
@@ -62,9 +63,8 @@ class PoseGenerator:
                         R_BbarB=RotationMatrix(orientation),
                         theta_bound=trajectory.orientation_tolerance)
         
-        result = Solve(ik.prog(), q_guess)
-        print(f"Success? {result.is_success()}")
+        result = Solve(ik.prog(), self.q_guess)
         if result.is_success():
             return result.GetSolution(ik.q())
         else:
-            return None
+            raise Exception("Failed to find IK solution!")
