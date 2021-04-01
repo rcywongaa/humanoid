@@ -10,61 +10,59 @@ https://www.youtube.com/watch?v=E_CVq0lWfSc
 import numpy as np
 from pydrake.all import InverseKinematics, Solve
 from pydrake.all import SnoptSolver, DiagramBuilder, AddMultibodyPlantSceneGraph, MultibodyPlant
-from pydrake.all import RotationMatrix
+from pydrake.all import RotationMatrix, PiecewiseTrajectory, PiecewiseQuaternionSlerp
 from Atlas import getJointIndexInGeneralizedPositions
+from typing import NamedTuple
+
+class Trajectory(NamedTuple):
+    frame: str
+    position_offset: np.ndarray
+    position_traj: PiecewiseTrajectory
+    position_tolerance: float
+    orientation_traj: PiecewiseQuaternionSlerp
+    orientation_tolerance: float
 
 class PoseGenerator:
     '''
     Parameters
     ----------
-    left_foot_trajectory : pydrake.PiecewiseTrajectory
-    right_foot_trajectory : pydrake.PiecewiseTrajectory
+    trajectories : Trajectory
     '''
-    def __init__(self, plant, trajectory_dict):
+    def __init__(self, plant, trajectories):
         self.plant = plant
-        self.trajectory_dict = trajectory_dict
+        self.trajectories = trajectories
         pass
 
     def get_ik(self, t, q_guess=None):
         epsilon = 1e-2
-        # builder = DiagramBuilder()
-        # _, scene_graph = AddMultibodyPlantSceneGraph(builder, self.plant)
-        # diagram = builder.Build()
-        # diagram_context = diagram.CreateDefaultContext()
-        # plant_context = diagram.GetMutableSubsystemContext(
-            # self.plant, diagram_context)
-        # ik = InverseKinematics(plant=self.plant, plant_context=plant_context, with_joint_limits=False)
         ik = InverseKinematics(plant=self.plant, with_joint_limits=True)
 
         if q_guess is None:
             context = self.plant.CreateDefaultContext()
             q_guess = self.plant.GetPositions(context)
+            # This helps get the solver out of the saddle point when knee joint are locked (0.0)
             q_guess[getJointIndexInGeneralizedPositions(self.plant, 'l_leg_kny')] = 0.1
             q_guess[getJointIndexInGeneralizedPositions(self.plant, 'r_leg_kny')] = 0.1
 
-        for frame_trajectory_pair in self.trajectory_dict.items():
-            position = frame_trajectory_pair[1][0].value(t)
+        for trajectory in self.trajectories:
+            position = trajectory.position_traj.value(t)
             ik.AddPositionConstraint(
-                    frameB=self.plant.GetFrameByName(frame_trajectory_pair[0]),
-                    p_BQ=np.zeros(3),
+                    frameB=self.plant.GetFrameByName(trajectory.frame),
+                    p_BQ=trajectory.position_offset,
                     frameA=self.plant.world_frame(),
-                    p_AQ_upper=position+epsilon,
-                    p_AQ_lower=position-epsilon)
+                    p_AQ_upper=position+trajectory.position_tolerance,
+                    p_AQ_lower=position-trajectory.position_tolerance)
 
-            if frame_trajectory_pair[1][1] is not None:
-                orientation = frame_trajectory_pair[1][1].value(t)
+            if trajectory.orientation_traj is not None:
+                orientation = trajectory.orientation_traj.value(t)
                 ik.AddOrientationConstraint(
                         frameAbar=self.plant.world_frame(),
                         R_AbarA=RotationMatrix.Identity(),
-                        frameBbar=self.plant.GetFrameByName(frame_trajectory_pair[0]),
+                        frameBbar=self.plant.GetFrameByName(trajectory.frame),
                         R_BbarB=RotationMatrix(orientation),
-                        theta_bound=0.2)
+                        theta_bound=trajectory.orientation_tolerance)
         
-        # q_err = (ik.q() - q0)[7]
-        # ik.prog().AddCost(np.dot(q_err, q_err))
-        solver = SnoptSolver()
-        result = solver.Solve(ik.prog(), q_guess)
-        # result = Solve(ik.prog(), q_guess)
+        result = Solve(ik.prog(), q_guess)
         print(f"Success? {result.is_success()}")
         if result.is_success():
             return result.GetSolution(ik.q())

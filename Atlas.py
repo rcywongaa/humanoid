@@ -91,6 +91,10 @@ class Atlas():
             ]).T
     }
 
+    FOOT_OFFSET = np.array([0.0, 0.0, -0.07645])
+    HEEL_OFFSET = np.array([-0.0876, 0.0, -0.07645])
+    TOE_OFFSET = np.array([0.1728, 0.0, -0.07645])
+
     NUM_CONTACTS = sum([contacts.shape[1] for contacts in CONTACTS_PER_FRAME.values()])
     FLOATING_BASE_DOF = 6
     FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions
