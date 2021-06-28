@@ -35,7 +35,7 @@ epsilon = 1e-9
 quaternion_epsilon = 1e-5
 PLAYBACK_ONLY = False
 ENABLE_COMPLEMENTARITY_CONSTRAINTS = True
-MAX_GROUND_PENETRATION = 0.0
+MAX_GROUND_PENETRATION = 0.02
 MAX_JOINT_ACCELERATION = 20.0
 g = np.array([0, 0, Atlas.g])
 MIN_TIMESTEP = 0.001
@@ -790,7 +790,6 @@ class HumanoidPlanner:
         self.prog.AddConstraint(eq(self.eq9b_slack, 0))
 
     # TODO: Constrain foot placement exactly
-    # FIXME: This is missing no-slip constraint
     def create_stance_constraint(self, k, contact_start_idx=0, contact_end_idx=-1, name=""):
         cj = self.reshape_3d_contact(self.c[k])
         Fj = self.reshape_3d_contact(self.F[k])
@@ -814,25 +813,27 @@ class HumanoidPlanner:
         # return (position_constraint, force_constraint, torque_constraint)
         return (force_constraint)
 
+    # FIXME: This does not agree with the guess foot trajectory in create_initial_guess
     def add_contact_sequence_constraints(self):
+        # self.contact_sequence = contact_sequence
         right_foot_start_idx = int(self.num_contacts/2)
         self.contact_sequence_constraints = []
         for k in range(self.N):
-            if k < int(self.N/5):
+            if k < int(self.N/7):
                 # Double stance
                 double_stance_constraints = self.create_stance_constraint(k, name="both 1")
                 self.contact_sequence_constraints.append(double_stance_constraints)
-            elif k < int(2*self.N/5):
+            elif k < int(3*self.N/7):
                 # Left swing, right stance
                 left_swing_constraints = self.create_swing_constraint(k, 0, right_foot_start_idx, name="left")
                 self.contact_sequence_constraints.append(left_swing_constraints)
                 right_stance_constraints = self.create_stance_constraint(k, right_foot_start_idx, -1, name="right")
                 self.contact_sequence_constraints.append(right_stance_constraints)
-            elif k < int(3*self.N/5):
+            elif k < int(4*self.N/7):
                 # Double stance
                 double_stance_constraints = self.create_stance_constraint(k,name="both 2")
                 self.contact_sequence_constraints.append(double_stance_constraints)
-            elif k < int(4*self.N/5):
+            elif k < int(6*self.N/7):
                 # Left stance right swing
                 left_stance_constraints = self.create_stance_constraint(k, 0, right_foot_start_idx, name="left")
                 self.contact_sequence_constraints.append(left_stance_constraints)
@@ -1195,8 +1196,8 @@ class HumanoidPlanner:
     def add_slack_cost(self):
         self.prog.AddCost(np.sum(self.eq8a_slack**2))
         self.prog.AddCost(np.sum(self.eq8b_slack**2))
-        # self.prog.AddCost(np.sum(self.eq9a_slack**2))
-        # self.prog.AddCost(np.sum(self.eq9b_slack**2))
+        self.prog.AddCost(np.sum(self.eq9a_slack**2))
+        self.prog.AddCost(np.sum(self.eq9b_slack**2))
 
     def create_minimal_program(self, num_knot_points, max_time):
         assert(max_time / num_knot_points > MIN_TIMESTEP)
@@ -1236,7 +1237,7 @@ class HumanoidPlanner:
         self.add_timestep_constraints()
         # self.add_first_timestep_constraints()
 
-    def add_0th_order_constraints(self, q_init, q_final, pelvis_only):
+    def add_initial_final_constraints(self, q_init, q_final, pelvis_only):
 
         # Make sure real part of q_init quaternion and q_final quaternion have same sign
         # Should help avoid dealing with the fact that q and -q represent the same quaternions
@@ -1245,9 +1246,9 @@ class HumanoidPlanner:
 
         ''' These constraints were not explicitly stated in the paper'''
         self.add_initial_pose_constraints(q_init)
-        # self.add_initial_velocity_constraints()
+        self.add_initial_velocity_constraints()
         self.add_final_pose_constraints(q_final, pelvis_only)
-        # self.add_final_velocity_constraints()
+        self.add_final_velocity_constraints()
         # self.add_final_COM_velocity_constraints()
         # self.add_final_COM_acceleration_constraints()
         # self.add_final_centroidal_angular_momentum_constraints()
@@ -1256,6 +1257,7 @@ class HumanoidPlanner:
         self.add_angular_velocity_constraints()
         self.add_unit_axis_constraint()
 
+    def add_kinematic_constraints(self):
         self.add_eq7h_constraints()
         self.add_eq7i_constraints()
         self.add_eq7j_constraints()
@@ -1265,16 +1267,16 @@ class HumanoidPlanner:
         # self.add_eq7k_beta_positive_constraints()
         # self.add_eq7k_torque_constraints()
 
-    def add_1st_order_constraints(self):
+    def add_dynamic_constraints(self):
+        self.add_eq7a_constraints()
+        self.add_eq7b_constraints()
         self.add_eq7c_constraints()
+
+    def add_time_integration_constraints(self):
         self.add_eq7d_constraints()
         self.add_eq7e_constraints()
         self.add_eq7f_constraints()
         self.add_eq7g_constraints()
-
-    def add_2nd_order_constraints(self):
-        self.add_eq7a_constraints()
-        # self.add_eq7b_constraints()
 
     def add_complementarity_constraints(self):
         self.add_eq8a_constraints()
@@ -1288,9 +1290,10 @@ class HumanoidPlanner:
 
     def create_full_program(self, q_init, q_final, num_knot_points, max_time, pelvis_only=True):
         self.create_minimal_program(num_knot_points, max_time)
-        self.add_0th_order_constraints(q_init, q_final, pelvis_only)
-        self.add_1st_order_constraints()
-        self.add_2nd_order_constraints()
+        self.add_initial_final_constraints(q_init, q_final, pelvis_only)
+        self.add_kinematic_constraints()
+        self.add_dynamic_constraints()
+        self.add_time_integration_constraints()
 
         if ENABLE_COMPLEMENTARITY_CONSTRAINTS:
             self.add_complementarity_constraints()
@@ -1310,32 +1313,35 @@ class HumanoidPlanner:
         # (self.prog.AddLinearConstraint(le(beta.flatten(), np.ones(beta.shape).flatten()*1e3))
                 # .evaluator().set_description("max beta"))
 
-    def create_q_v_w_guess(self):
-        # Guess q to avoid initializing with invalid quaternion
-        quat_traj_guess = PiecewiseQuaternionSlerp(breaks=[0, self.T], quaternions=[Quaternion(self.q_init[0:4]), Quaternion(self.q_final[0:4])])
-        position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([self.q_init[4:], self.q_final[4:]]).T)
+    # def create_q_v_w_guess(self):
+        # # Guess q to avoid initializing with invalid quaternion
+        # quat_traj_guess = PiecewiseQuaternionSlerp(breaks=[0, self.T], quaternions=[Quaternion(self.q_init[0:4]), Quaternion(self.q_final[0:4])])
+        # position_traj_guess = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.vstack([self.q_init[4:], self.q_final[4:]]).T)
 
-        '''
-        We cannot use Quaternion(quat_traj_guess.value(t)).wxyz()
-        See https://github.com/RobotLocomotion/drake/issues/14561
-        '''
-        q_guess = np.array([np.hstack([
-            RotationMatrix(quat_traj_guess.value(t)).ToQuaternion().wxyz(), position_traj_guess.value(t).flatten()])
-            for t in np.linspace(0, self.T, self.N)])
+        # '''
+        # We cannot use Quaternion(quat_traj_guess.value(t)).wxyz()
+        # See https://github.com/RobotLocomotion/drake/issues/14561
+        # '''
+        # q_guess = np.array([np.hstack([
+            # RotationMatrix(quat_traj_guess.value(t)).ToQuaternion().wxyz(), position_traj_guess.value(t).flatten()])
+            # for t in np.linspace(0, self.T, self.N)])
 
-        v_guess, w_mag_guess, w_axis_guess = self.create_v_w_guess_from_q(q_guess)
-        return q_guess, v_guess, w_mag_guess, w_axis_guess
+        # v_guess, w_mag_guess, w_axis_guess = self.create_v_w_guess_from_q(q_guess)
+        # return q_guess, v_guess, w_mag_guess, w_axis_guess
 
-    def create_v_w_guess_from_q(self, q_guess):
+    # FIXME: First guess (where dt = 0.0) is probably wrong...
+    def create_v_w_guess_from_q(self, q_guess, dt_guess):
         breaks = np.linspace(0, self.T, self.N)
         quat_traj_guess = PiecewiseQuaternionSlerp(breaks, quaternions=[Quaternion(q[0:4]) for q in q_guess])
         position_traj_guess = PiecewisePolynomial.FirstOrderHold(breaks, np.vstack([q[4:] for q in q_guess]).T)
 
+        # FIXME:  MakeDerivative is different from (q[k] - q[k-1])/dt[k]
         v_traj_guess = position_traj_guess.MakeDerivative()
         w_traj_guess = quat_traj_guess.MakeDerivative()
         v_guess = np.array([
             np.hstack([w_traj_guess.value(t).flatten(), v_traj_guess.value(t).flatten()])
             for t in np.linspace(0, self.T, self.N)])
+        pdb.set_trace()
 
         w_mag_guess = np.array([np.linalg.norm(v_guess[k][0:3]) for k in range(self.N)])
         w_axis_guess = np.zeros((self.N, 3))
@@ -1352,21 +1358,31 @@ class HumanoidPlanner:
         ''' 
         Create feasible IK guess
         '''
-        l_foot_pos_traj = PiecewisePolynomial.FirstOrderHold(np.linspace(0, self.T, 5), np.array([
-            [0.00, 0.09, 0.01],
-            [0.25, 0.09, 0.11],
-            [0.50, 0.09, 0.01],
-            [0.50, 0.09, 0.01],
-            [0.50, 0.09, 0.01]]).T)
-        r_foot_pos_traj = PiecewisePolynomial.FirstOrderHold(np.linspace(0, self.T, 5), np.array([
-            [0.00, -0.09, 0.01],
-            [0.00, -0.09, 0.01],
-            [0.00, -0.09, 0.01],
-            [0.25, -0.09, 0.11],
-            [0.50, -0.09, 0.01]]).T)
-        pelvis_pos_traj = PiecewisePolynomial.FirstOrderHold([0.0, self.T], np.array([
-            [0.00, 0.00, Atlas.PELVIS_HEIGHT-0.1],
-            [0.50, 0.00, Atlas.PELVIS_HEIGHT-0.1]]).T)
+        l_foot_pos_traj = PiecewisePolynomial.FirstOrderHold(np.linspace(0, self.T, 8), np.array([
+            [0.00, 0.09, 0.00], # both stance
+            [0.00, 0.09, 0.00], # both stance
+            [0.20, 0.09, 0.10], # left flight
+            [0.40, 0.09, 0.00], # both stance
+            [0.40, 0.09, 0.00], # both stance
+            [0.40, 0.09, 0.00], # left stance
+            [0.40, 0.09, 0.00], # both stance
+            [0.40, 0.09, 0.00]  # both stance
+            ]).T)
+        r_foot_pos_traj = PiecewisePolynomial.FirstOrderHold(np.linspace(0, self.T, 8), np.array([
+            [0.00, -0.09, 0.00], # both stance
+            [0.00, -0.09, 0.00], # both stance
+            [0.00, -0.09, 0.00], # right stance
+            [0.00, -0.09, 0.00], # both stance
+            [0.00, -0.09, 0.00], # both stance
+            [0.20, -0.09, 0.10], # right flight
+            [0.40, -0.09, 0.00], #both stance
+            [0.40, -0.09, 0.00]  #both stance
+            ]).T)
+        pelvis_pos_traj = PiecewisePolynomial.FirstOrderHold(np.linspace(0, self.T, 4), np.array([
+            [0.00, 0.00, Atlas.PELVIS_HEIGHT],
+            [0.00, 0.00, Atlas.PELVIS_HEIGHT-0.05],
+            [0.40, 0.00, Atlas.PELVIS_HEIGHT-0.05],
+            [0.40, 0.00, Atlas.PELVIS_HEIGHT]]).T)
         null_orientation_traj = PiecewiseQuaternionSlerp([0.0, self.T], [
             Quaternion([1.0, 0.0, 0.0, 0.0]),
             Quaternion([1.0, 0.0, 0.0, 0.0])])
@@ -1378,7 +1394,7 @@ class HumanoidPlanner:
 
         q_guess = np.array([
             generator.get_ik(t) for t in np.linspace(0, self.T, self.N)])
-        v_guess, w_mag_guess, w_axis_guess = self.create_v_w_guess_from_q(q_guess)
+        v_guess, w_mag_guess, w_axis_guess = self.create_v_w_guess_from_q(q_guess, dt_guess)
 
         # q_guess, v_guess, w_mag_guess, w_axis_guess = self.create_q_v_w_guess()
 
@@ -1506,8 +1522,8 @@ class HumanoidPlanner:
         result = solver.Solve(self.prog, initial_guess, options)
         print(f"Success: {result.is_success()}  Solve time: {time.time() - start_solve_time}s  Cost: {result.get_optimal_cost()}")
 
-        # if not result.is_success():
-            # print(result.GetInfeasibleConstraintNames(self.prog))
+        if not result.is_success():
+            print(result.GetInfeasibleConstraintNames(self.prog))
 
         solution = Solution(
                 dt         = result.GetSolution(self.dt),

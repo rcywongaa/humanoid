@@ -1,14 +1,13 @@
 from HumanoidPlanner import HumanoidPlanner
 from HumanoidPlanner import create_q_interpolation, create_r_interpolation, apply_angular_velocity_to_quaternion
 from HumanoidPlanner import create_constraint_input_array
-from pydrake.all import DiagramBuilder, AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer, ConnectContactResultsToDrakeVisualizer, Simulator
+from pydrake.all import DiagramBuilder, AddMultibodyPlantSceneGraph, ConnectDrakeVisualizer
 from pydrake.all import MathematicalProgram
 from pydrake.all import Quaternion, RollPitchYaw
 import numpy as np
-from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getJointIndexInGeneralizedPositions, set_null_input
+from Atlas import Atlas, load_atlas, set_atlas_initial_pose, getJointIndexInGeneralizedPositions, set_null_input, visualize
 import unittest
 import pdb
-import time
 
 from pydrake.all import MultibodyPlant
 from pydrake.autodiffutils import initializeAutoDiff
@@ -704,55 +703,60 @@ class TestHumanoidPlanner(unittest.TestCase):
         q_init = default_q()
         q_init[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
         q_final = default_q()
-        q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
-        q_final[4] = 0.2 # x position of pelvis
+        # q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
+        q_final[4] = 0.4 # x position of pelvis
         q_final[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
-        self.planner.add_0th_order_constraints(q_init, q_final, True)
-        self.planner.add_1st_order_constraints()
-        self.planner.add_2nd_order_constraints()
-        is_success, sol = self.planner.solve(self.planner.create_initial_guess(False))
-        if is_success:
-            self.planner.add_contact_sequence_constraints()
-            is_success, sol = self.planner.solve(self.planner.create_guess(sol, False))
+        self.planner.add_initial_final_constraints(q_init, q_final, True)
+        self.planner.add_dynamic_constraints()
+        self.planner.add_time_integration_constraints()
+        self.planner.add_kinematic_constraints()
+        # self.planner.add_contact_sequence_constraints()
+        is_success, sol = self.planner.solve(self.planner.create_initial_guess(True))
+        # is_success, sol = self.planner.solve(self.planner.create_initial_guess(False))
+        # if is_success:
+            # self.planner.add_contact_sequence_constraints()
+            # is_success, sol = self.planner.solve(self.planner.create_guess(sol, False))
         visualize(sol.q)
         pdb.set_trace()
         self.assertTrue(is_success)
 
     def test_complementarity_constraints(self):
-        N = 50
-        self.planner.create_minimal_program(N, 1.0)
+        N = 80
+        self.planner.create_minimal_program(N, 4.0)
         q_init = default_q()
-        q_init[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
+        q_init[6] = Atlas.PELVIS_HEIGHT-0.1 # z position of pelvis
         q_final = default_q()
         q_final[0:4] = Quaternion(RollPitchYaw([0.0, 0.0, 0.0]).ToRotationMatrix().matrix()).wxyz()
         q_final[4] = 0.5 # x position of pelvis
-        q_final[6] = Atlas.PELVIS_HEIGHT # z position of pelvis
+        q_final[6] = Atlas.PELVIS_HEIGHT-0.1 # z position of pelvis
         self.planner.add_0th_order_constraints(q_init, q_final, True)
         self.planner.add_1st_order_constraints()
         self.planner.add_2nd_order_constraints()
         self.planner.add_slack_constraints()
-        is_success, sol = self.planner.solve(self.planner.create_initial_guess())
-        if not is_success:
-            self.fail("Failed to find non-complementarity solution!")
+        # is_success, sol = self.planner.solve(self.planner.create_initial_guess(check_violations=False))
+        # if not is_success:
+            # self.fail("Failed to find non-complementarity solution!")
+        # pdb.set_trace()
 
-        print("Non-complementarity solution found!")
+        # print("Non-complementarity solution found!")
         self.planner.add_eq8a_constraints()
         self.planner.add_eq8b_constraints()
         self.planner.add_eq8c_contact_force_constraints()
         self.planner.add_eq8c_contact_distance_constraints()
         self.planner.add_eq9a_constraints()
         self.planner.add_eq9b_constraints()
-        is_success, sol = self.planner.solve(self.planner.create_guess(sol))
-        if not is_success:
-            self.fail("Failed to find complementarity solution!")
+        # is_success, sol = self.planner.solve(self.planner.create_guess(sol, check_violations=False))
+        # if not is_success:
+            # self.fail("Failed to find complementarity solution!")
 
-        print("Complementarity solution found!")
+        # print("Complementarity solution found!")
         self.planner.add_slack_cost()
-        is_success, sol = self.planner.solve(self.planner.create_guess(sol))
+        # is_success, sol = self.planner.solve(self.planner.create_guess(sol, check_violations=False))
         # self.planner.add_eq10_cost()
+        is_success, sol = self.planner.solve(self.planner.create_initial_guess(check_violations=False))
+        pdb.set_trace()
         self.assertTrue(is_success)
         visualize(sol.q)
-        pdb.set_trace()
 
 if __name__ == "__main__":
     unittest.main()
