@@ -70,10 +70,10 @@ def MakeNamedViewVelocities(mbp, view_name):
         names[start+5] = body_name+'_vz'
     return namedview(view_name, names)
 
-def gait_optimization(gait = 'walking_trot'):
+def gait_optimization(robot_ctor):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, 1e-3)
-    littledog = LittleDog(plant, gait)
+    robot = robot_ctor(plant)
     plant.Finalize()
     visualizer = ConnectMeshcatVisualizer(builder, 
         scene_graph=scene_graph, 
@@ -81,7 +81,7 @@ def gait_optimization(gait = 'walking_trot'):
     diagram = builder.Build()
     context = diagram.CreateDefaultContext()
     plant_context = plant.GetMyContextFromRoot(context)
-    littledog.set_home(plant, plant_context)
+    robot.set_home(plant, plant_context)
     visualizer.load()
     diagram.Publish(context)
 
@@ -92,19 +92,19 @@ def gait_optimization(gait = 'walking_trot'):
     VelocityView = MakeNamedViewVelocities(plant, "Velocities")
 
     mu = 1 # rubber on rubber
-    total_mass = littledog.get_total_mass(context)
+    total_mass = robot.get_total_mass(context)
     gravity = plant.gravity_field().gravity_vector()
     g = 9.81
     
     nq = 12
-    contact_frame = littledog.get_contact_frames()
+    contact_frame = robot.get_contact_frames()
 
-    in_stance = littledog.get_stance_schedule()
-    N = littledog.get_num_timesteps()
-    is_laterally_symmetric = littledog.get_laterally_symmetric()
-    check_self_collision = littledog.get_check_self_collision()
-    stride_length = littledog.get_stride_length()
-    speed = littledog.get_speed()
+    in_stance = robot.get_stance_schedule()
+    N = robot.get_num_timesteps()
+    is_laterally_symmetric = robot.get_laterally_symmetric()
+    check_self_collision = robot.get_check_self_collision()
+    stride_length = robot.get_stride_length()
+    speed = robot.get_speed()
     
     T = stride_length / speed
     if is_laterally_symmetric:
@@ -187,7 +187,7 @@ def gait_optimization(gait = 'walking_trot'):
             vars=np.concatenate(([h[n]], q[:,n], v[:,n], q[:,n+1])))
 
     # Contact forces
-    num_contacts = littledog.get_num_contacts()
+    num_contacts = robot.get_num_contacts()
     contact_force = [prog.NewContinuousVariables(3, N-1, f"contact{contact}_contact_force") for contact in range(num_contacts)]
     for n in range(N-1):
         for contact in range(num_contacts):
@@ -429,11 +429,11 @@ def gait_optimization(gait = 'walking_trot'):
     visualizer.publish_recording()
 
 # Try them all!  The last two could use a little tuning.
-# gait_optimization('walking_trot')
+littledog_walking_trot = partial(LittleDog, gait="walking_trot")
+gait_optimization(littledog_walking_trot)
 #gait_optimization('running_trot')
 # gait_optimization('rotary_gallop')  
-gait_optimization('bound')
+# gait_optimization('bound')
 
 import time
-while True:
-    time.sleep(1)
+time.sleep(1e5)
