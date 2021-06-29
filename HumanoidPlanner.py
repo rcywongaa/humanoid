@@ -17,6 +17,33 @@ from pydrake.all import (
 )
 from pydrake.common.containers import namedview
 
+from pydrake.all import FindResourceOrThrow
+
+import sys
+from meshcat.servers.zmqserver import start_zmq_server_as_subprocess
+proc, zmq_url, web_url = start_zmq_server_as_subprocess(
+    server_args=['--ngrok_http_tunnel'] if 'google.colab' in sys.modules else [])
+
+running_as_notebook = True
+
+def set_home(plant, context):
+    hip_roll = .1;
+    hip_pitch = 1;
+    knee = 1.55;
+    plant.GetJointByName("front_right_hip_roll").set_angle(context, -hip_roll)
+    plant.GetJointByName("front_right_hip_pitch").set_angle(context, hip_pitch)
+    plant.GetJointByName("front_right_knee").set_angle(context, -knee)
+    plant.GetJointByName("front_left_hip_roll").set_angle(context, hip_roll)
+    plant.GetJointByName("front_left_hip_pitch").set_angle(context, hip_pitch)
+    plant.GetJointByName("front_left_knee").set_angle(context, -knee)
+    plant.GetJointByName("back_right_hip_roll").set_angle(context, -hip_roll)
+    plant.GetJointByName("back_right_hip_pitch").set_angle(context, -hip_pitch)
+    plant.GetJointByName("back_right_knee").set_angle(context, knee)
+    plant.GetJointByName("back_left_hip_roll").set_angle(context, hip_roll)
+    plant.GetJointByName("back_left_hip_pitch").set_angle(context, -hip_pitch)
+    plant.GetJointByName("back_left_knee").set_angle(context, knee)
+    plant.SetFreeBodyPose(context, plant.GetBodyByName("body"), RigidTransform([0, 0, 0.146]))
+
 # Need this because a==b returns True even if a = AutoDiffXd(1, [1, 2]), b= AutoDiffXd(2, [3, 4])
 # That's the behavior of AutoDiffXd in C++, also.
 def autoDiffArrayEqual(a,b):
@@ -66,7 +93,8 @@ def gait_optimization(gait = 'walking_trot'):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, 1e-3)
     parser = Parser(plant)
-    littledog = parser.AddModelFromFile(FindResource('models/littledog/LittleDog.urdf'))
+    # littledog = parser.AddModelFromFile(FindResourceOrThrow('models/littledog/LittleDog.urdf'))
+    littledog = parser.AddModelFromFile("./littledog/LittleDog.urdf")
     plant.Finalize()
     visualizer = ConnectMeshcatVisualizer(builder, 
         scene_graph=scene_graph, 
@@ -462,6 +490,8 @@ def gait_optimization(gait = 'walking_trot'):
 
 # Try them all!  The last two could use a little tuning.
 gait_optimization('walking_trot')
+while True:
+    pass
 #gait_optimization('running_trot')
 #gait_optimization('rotary_gallop')  
 #gait_optimization('bound')
