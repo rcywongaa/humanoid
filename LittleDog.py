@@ -3,16 +3,11 @@ from pydrake.all import (
         Parser, RigidTransform
 )
 
-class LittleDog:
+from Robot import Robot
+
+class LittleDog(Robot):
     def __init__(self, plant, gait="walking_trot"):
-        self.plant = plant
-        parser = Parser(self.plant)
-        self.model = parser.AddModelFromFile("robots/littledog/LittleDog.urdf")
-        self.contact_frames = [
-            self.plant.GetFrameByName('front_left_foot_center'),
-            self.plant.GetFrameByName('front_right_foot_center'),
-            self.plant.GetFrameByName('back_left_foot_center'),
-            self.plant.GetFrameByName('back_right_foot_center')]
+        super().__init__(plant, "robots/littledog/LittleDog.urdf")
 
         # setup gait
         self.is_laterally_symmetric = False
@@ -58,6 +53,13 @@ class LittleDog:
         else:
             raise RuntimeError('Unknown gait.')
 
+    def get_contact_frames(self): 
+        return [
+            self.plant.GetFrameByName('front_left_foot_center'),
+            self.plant.GetFrameByName('front_right_foot_center'),
+            self.plant.GetFrameByName('back_left_foot_center'),
+            self.plant.GetFrameByName('back_right_foot_center')]
+
     def set_home(self, plant, context):
         hip_roll = .1;
         hip_pitch = 1;
@@ -75,31 +77,3 @@ class LittleDog:
         plant.GetJointByName("back_left_hip_pitch").set_angle(context, -hip_pitch)
         plant.GetJointByName("back_left_knee").set_angle(context, knee)
         plant.SetFreeBodyPose(context, plant.GetBodyByName("body"), RigidTransform([0, 0, 0.146]))
-
-    def get_total_mass(self, context):
-        return sum(self.plant.get_body(index).get_mass(context) for index in self.plant.GetBodyIndices(self.model))
-
-    def get_contact_frames(self):
-        return self.contact_frames
-
-    def get_num_contacts(self):
-        return len(self.contact_frames)
-
-    def get_stance_schedule(self):
-        return self.in_stance
-
-    def get_num_timesteps(self):
-        return self.N
-
-    def get_laterally_symmetric(self):
-        return self.is_laterally_symmetric
-
-    def get_check_self_collision(self):
-        return self.check_self_collision
-
-    def get_stride_length(self):
-        return self.stride_length
-
-    def get_speed(self):
-        return self.speed
-
