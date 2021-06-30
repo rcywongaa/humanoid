@@ -6,7 +6,9 @@ Whole-body Motion Planning with Centroidal Dynamics and Full Kinematics
 by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 '''
 from LittleDog import LittleDog
+from Atlas import Atlas
 
+import pdb
 from functools import partial
 import numpy as np
 from pydrake.all import AddMultibodyPlantSceneGraph, DiagramBuilder, Parser, ConnectMeshcatVisualizer, RigidTransform, Simulator, PidController
@@ -36,6 +38,8 @@ def MakeNamedViewPositions(mbp, view_name):
     for ind in range(mbp.num_joints()): 
         joint = mbp.get_joint(JointIndex(ind))
         # TODO: Handle planar joints, etc.
+        if joint.num_positions() != 1:
+            pdb.set_trace()
         assert(joint.num_positions() == 1)
         names[joint.position_start()] = joint.name()
     for ind in mbp.GetFloatingBaseBodies():
@@ -86,7 +90,7 @@ def gait_optimization(robot_ctor):
     diagram.Publish(context)
 
     q0 = plant.GetPositions(plant_context)
-    body_frame = plant.GetFrameByName("body")
+    body_frame = plant.GetFrameByName(robot.get_body_name())
 
     PositionView = MakeNamedViewPositions(plant, "Positions")
     VelocityView = MakeNamedViewVelocities(plant, "Velocities")
@@ -430,10 +434,12 @@ def gait_optimization(robot_ctor):
 
 # Try them all!  The last two could use a little tuning.
 littledog_walking_trot = partial(LittleDog, gait="walking_trot")
-gait_optimization(littledog_walking_trot)
-#gait_optimization('running_trot')
-# gait_optimization('rotary_gallop')  
-# gait_optimization('bound')
+littledog_running_trot = partial(LittleDog, gait="running_trot")
+littledog_rotary_gallop = partial(LittleDog, gait="rotary_gallop")
+littledog_bound = partial(LittleDog, gait="bound")
+# gait_optimization(littledog_walking_trot)
+
+gait_optimization(Atlas)
 
 import time
 time.sleep(1e5)

@@ -2,15 +2,18 @@
 
 import numpy as np
 
-from pydrake.all import (
-        RigidTransform, Parser, PackageMap
-)
-
+from pydrake.common import FindResourceOrThrow
+from pydrake.math import RigidTransform
+from pydrake.multibody.parsing import Parser
+from pydrake.systems.analysis import Simulator
+from pydrake.all import MultibodyPlant
+from pydrake.systems.framework import DiagramBuilder
+from pydrake.all import ConnectDrakeVisualizer, SceneGraph, HalfSpace, Box, ConnectContactResultsToDrakeVisualizer, Simulator
+from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph, CoulombFriction
+from pydrake.systems.analysis import Simulator
+from pydrake.math import RollPitchYaw
 from typing import NamedTuple
 import time
-import pdb
-
-from Robot import Robot
 
 '''
 Floating base is attached at the pelvis link
@@ -19,7 +22,12 @@ For generalized velocities, first 6 values are 3 rotational velocities + 3 xd, y
 Hence generalized velocities are not strictly the derivative of generalized positions
 '''
 
-class Atlas(Robot):
+class Atlas():
+    # Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
+    M = 175.0
+    g = -9.81
+    PELVIS_HEIGHT = 0.93845
+
     class JointLimit(NamedTuple):
         effort: float
         lower: float
@@ -83,119 +91,22 @@ class Atlas(Robot):
             ]).T
     }
 
-    PELVIS_HEIGHT = 0.93845
+    FOOT_OFFSET = np.array([0.0, 0.0, -0.07645])
+    HEEL_OFFSET = np.array([-0.0876, 0.0, -0.07645])
+    TOE_OFFSET = np.array([0.1728, 0.0, -0.07645])
 
+    NUM_CONTACTS = sum([contacts.shape[1] for contacts in CONTACTS_PER_FRAME.values()])
+    FLOATING_BASE_DOF = 6
+    FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions
     NUM_ACTUATED_DOF = 30
-    TOTAL_DOF = 37
-
-    L_FOOT_HEEL_L_IDX          = 0
-    L_FOOT_HEEL_R_IDX          = 1
-    L_FOOT_TOE_L_IDX           = 2
-    L_FOOT_TOE_R_IDX           = 3
-    L_FOOT_MIDFOOT_FRONT_L_IDX = 4
-    L_FOOT_MIDFOOT_FRONT_R_IDX = 5
-    L_FOOT_MIDFOOT_REAR_L_IDX  = 6
-    L_FOOT_MIDFOOT_REAR_R_IDX  = 7
-    R_FOOT_HEEL_L_IDX          = 8
-    R_FOOT_HEEL_R_IDX          = 9
-    R_FOOT_TOE_L_IDX           = 10
-    R_FOOT_TOE_R_IDX           = 11
-    R_FOOT_MIDFOOT_FRONT_L_IDX = 12
-    R_FOOT_MIDFOOT_FRONT_R_IDX = 13
-    R_FOOT_MIDFOOT_REAR_L_IDX  = 14
-    R_FOOT_MIDFOOT_REAR_R_IDX  = 15
-
-    def __init__(self, plant):
-        package_map = PackageMap()
-        package_map.PopulateFromFolder("robots/atlas/")
-        super().__init__(plant, "robots/atlas/urdf/atlas_minimal_contact.urdf", package_map)
-
-    def get_contact_frames(self):
-        return [
-            self.plant.GetFrameByName("l_foot_heel_l"),
-            self.plant.GetFrameByName("l_foot_heel_r"),
-            self.plant.GetFrameByName("l_foot_toe_l"),
-            self.plant.GetFrameByName("l_foot_toe_r"),
-            self.plant.GetFrameByName("l_foot_midfoot_front_l"),
-            self.plant.GetFrameByName("l_foot_midfoot_front_r"),
-            self.plant.GetFrameByName("l_foot_midfoot_rear_l"),
-            self.plant.GetFrameByName("l_foot_midfoot_rear_r"),
-            self.plant.GetFrameByName("r_foot_heel_l"),
-            self.plant.GetFrameByName("r_foot_heel_r"),
-            self.plant.GetFrameByName("r_foot_toe_l"),
-            self.plant.GetFrameByName("r_foot_toe_r"),
-            self.plant.GetFrameByName("r_foot_midfoot_front_l"),
-            self.plant.GetFrameByName("r_foot_midfoot_front_r"),
-            self.plant.GetFrameByName("r_foot_midfoot_rear_l"),
-            self.plant.GetFrameByName("r_foot_midfoot_rear_r")]
-
-    def set_home(self, plant, context):
-        plant.SetFreeBodyPose(context, plant.GetBodyByName("pelvis"), RigidTransform([0, 0, Atlas.PELVIS_HEIGHT]))
-
-    def get_stance_schedule(self):
-        in_stance = np.ones((self.get_num_contacts(), self.get_num_timesteps()))
-        # left foot up
-        in_stance[L_FOOT_HEEL_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_HEEL_L_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_REAR_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_REAR_L_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_FRONT_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_FRONT_L_IDX, 5:10] = 0
-        in_stance[L_FOOT_TOE_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_TOE_L_IDX, 5:10] = 0
-
-        # left heel strike
-        in_stance[L_FOOT_HEEL_R_IDX, 10:] = 1
-        in_stance[L_FOOT_HEEL_L_IDX, 10:] = 1
-        # left foot plant
-        in_stance[L_FOOT_MIDFOOT_REAR_R_IDX, 15:] = 1
-        in_stance[L_FOOT_MIDFOOT_REAR_L_IDX, 15:] = 1
-        in_stance[L_FOOT_MIDFOOT_FRONT_R_IDX, 15:] = 1
-        in_stance[L_FOOT_MIDFOOT_FRONT_L_IDX, 15:] = 1
-        in_stance[L_FOOT_TOE_R_IDX, 15:] = 1
-        in_stance[L_FOOT_TOE_L_IDX, 15:] = 1
-
-        # right heel off
-        in_stance[R_FOOT_HEEL_R_IDX, 15:25] = 0
-        in_stance[R_FOOT_HEEL_L_IDX, 15:25] = 0
-        # right toe off
-        in_stance[R_FOOT_MIDFOOT_REAR_R_IDX, 20:25] = 0
-        in_stance[R_FOOT_MIDFOOT_REAR_L_IDX, 20:25] = 0
-        in_stance[R_FOOT_MIDFOOT_FRONT_R_IDX, 20:25] = 0
-        in_stance[R_FOOT_MIDFOOT_FRONT_L_IDX, 20:25] = 0
-        in_stance[R_FOOT_TOE_R_IDX, 20:25] = 0
-        in_stance[R_FOOT_TOE_L_IDX, 20:25] = 0
-
-        # right heel strike
-        in_stance[R_FOOT_HEEL_R_IDX, 25:] = 1
-        in_stance[R_FOOT_HEEL_L_IDX, 25:] = 1
-        # right foot plant
-        in_stance[R_FOOT_MIDFOOT_REAR_R_IDX, 30:] = 1
-        in_stance[R_FOOT_MIDFOOT_REAR_L_IDX, 30:] = 1
-        in_stance[R_FOOT_MIDFOOT_FRONT_R_IDX, 30:] = 1
-        in_stance[R_FOOT_MIDFOOT_FRONT_L_IDX, 30:] = 1
-        in_stance[R_FOOT_TOE_R_IDX, 30:] = 1
-        in_stance[R_FOOT_TOE_L_IDX, 30:] = 1
-
-        return in_stance
-
-    def get_num_timesteps(self):
-        return 41
-
-    def get_laterally_symmetric(self):
-        return False
-
-    def get_check_self_collision(self):
-        return False
-
-    def get_stride_length(self):
-        return 0.7
-
-    def get_speed(self):
-        return 1.4
-
-    def get_body_name(self):
-        return "pelvis"
+    TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
+    POS_QW_IDX = 0
+    POS_QX_IDX = 1
+    POS_QY_IDX = 2
+    POS_QZ_IDX = 3
+    POS_X_IDX = 4
+    POS_Y_IDX = 5
+    POS_Z_IDX = 6
 
 def getAllJointIndicesInGeneralizedPositions(plant):
     for joint_limit in Atlas.JOINT_LIMITS.items():
@@ -231,3 +142,77 @@ def getJointValues(plant, joint_names, context):
 def setJointValues(plant, joint_values, context):
     for i in range(len(joint_values)):
         plant.GetJointByIndex(i).set_angle(context, joint_values[i])
+
+# plant is modified in place
+def load_atlas(plant, add_ground=False):
+    atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_minimal_contact.urdf")
+    # atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
+    atlas = Parser(plant).AddModelFromFile(atlas_file)
+
+    if add_ground:
+        static_friction = 1.0
+        green = np.array([0.5, 1.0, 0.5, 1.0])
+
+        # plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
+                # "GroundVisuaGeometry", green)
+
+        ground_friction = CoulombFriction(1.0, 1.0)
+        plant.RegisterCollisionGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
+                "GroundCollisionGeometry", ground_friction)
+
+    plant.Finalize()
+    plant.set_penetration_allowance(1.0e-3)
+    plant.set_stiction_tolerance(1.0e-3)
+
+def set_atlas_initial_pose(plant, plant_context):
+    pelvis = plant.GetBodyByName("pelvis")
+    X_WP = RigidTransform(RollPitchYaw(0.0, 0.0, 0.0), np.array([0.0, 0.0, 0.94]))
+    plant.SetFreeBodyPose(plant_context, pelvis, X_WP)
+
+def set_null_input(plant, plant_context):
+    tau = np.zeros(plant.num_actuated_dofs())
+    plant.get_actuation_input_port().FixValue(plant_context, tau)
+
+def visualize(q, dt=None):
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(0.001))
+    load_atlas(plant, add_ground=True)
+    plant_context = plant.CreateDefaultContext()
+    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
+    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
+    diagram = builder.Build()
+
+    if len(q.shape) == 1:
+        q = np.reshape(q, (1, -1))
+
+    for i in range(q.shape[0]):
+        print(f"knot point: {i}")
+        diagram_context = diagram.CreateDefaultContext()
+        plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
+        set_null_input(plant, plant_context)
+
+        plant.SetPositions(plant_context, q[i])
+        simulator = Simulator(diagram, diagram_context)
+        simulator.set_target_realtime_rate(0.0)
+        simulator.AdvanceTo(0.0001)
+        if not dt is None:
+            time.sleep(5/(np.sum(dt))*dt[i])
+        else:
+            time.sleep(0.5)
+
+if __name__ == "__main__":
+    builder = DiagramBuilder()
+    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
+    load_atlas(plant, add_ground=True)
+    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
+    diagram = builder.Build()
+
+    diagram_context = diagram.CreateDefaultContext()
+    plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
+
+    set_atlas_initial_pose(plant, plant_context)
+    set_null_input(plant, plant_context)
+
+    simulator = Simulator(diagram, diagram_context)
+    simulator.set_target_realtime_rate(0.2)
+    simulator.AdvanceTo(2.0)

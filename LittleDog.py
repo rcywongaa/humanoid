@@ -77,3 +77,24 @@ class LittleDog(Robot):
         plant.GetJointByName("back_left_hip_pitch").set_angle(context, -hip_pitch)
         plant.GetJointByName("back_left_knee").set_angle(context, knee)
         plant.SetFreeBodyPose(context, plant.GetBodyByName("body"), RigidTransform([0, 0, 0.146]))
+
+    def get_stance_schedule(self):
+        return self.in_stance
+
+    def get_num_timesteps(self):
+        return self.N
+
+    def get_laterally_symmetric(self):
+        return self.is_laterally_symmetric
+
+    def get_check_self_collision(self):
+        return self.check_self_collision
+
+    def get_stride_length(self):
+        return self.stride_length
+
+    def get_speed(self):
+        return self.speed
+
+    def get_body_name(self):
+        return "body"
