@@ -317,7 +317,7 @@ def gait_optimization(robot_ctor):
     # from https://github.com/RobotLocomotion/LittleDog/blob/master/gaitOptimization.m 
 
     result = Solve(prog)
-    print(result.get_solver_id().name())
+    print(f"{result.get_solver_id().name()}: {result.is_success()}")
     #print(result.is_success())  # We expect this to be false if iterations are limited.
 
     def HalfStrideToFullStride(a):
