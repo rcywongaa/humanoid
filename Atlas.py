@@ -135,47 +135,47 @@ class Atlas(Robot):
     def get_stance_schedule(self):
         in_stance = np.ones((self.get_num_contacts(), self.get_num_timesteps()))
         # left foot up
-        in_stance[L_FOOT_HEEL_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_HEEL_L_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_REAR_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_REAR_L_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_FRONT_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_MIDFOOT_FRONT_L_IDX, 5:10] = 0
-        in_stance[L_FOOT_TOE_R_IDX, 5:10] = 0
-        in_stance[L_FOOT_TOE_L_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, 5:10] = 0
 
         # left heel strike
-        in_stance[L_FOOT_HEEL_R_IDX, 10:] = 1
-        in_stance[L_FOOT_HEEL_L_IDX, 10:] = 1
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 10:] = 1
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 10:] = 1
         # left foot plant
-        in_stance[L_FOOT_MIDFOOT_REAR_R_IDX, 15:] = 1
-        in_stance[L_FOOT_MIDFOOT_REAR_L_IDX, 15:] = 1
-        in_stance[L_FOOT_MIDFOOT_FRONT_R_IDX, 15:] = 1
-        in_stance[L_FOOT_MIDFOOT_FRONT_L_IDX, 15:] = 1
-        in_stance[L_FOOT_TOE_R_IDX, 15:] = 1
-        in_stance[L_FOOT_TOE_L_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, 15:] = 1
 
         # right heel off
-        in_stance[R_FOOT_HEEL_R_IDX, 15:25] = 0
-        in_stance[R_FOOT_HEEL_L_IDX, 15:25] = 0
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 15:25] = 0
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 15:25] = 0
         # right toe off
-        in_stance[R_FOOT_MIDFOOT_REAR_R_IDX, 20:25] = 0
-        in_stance[R_FOOT_MIDFOOT_REAR_L_IDX, 20:25] = 0
-        in_stance[R_FOOT_MIDFOOT_FRONT_R_IDX, 20:25] = 0
-        in_stance[R_FOOT_MIDFOOT_FRONT_L_IDX, 20:25] = 0
-        in_stance[R_FOOT_TOE_R_IDX, 20:25] = 0
-        in_stance[R_FOOT_TOE_L_IDX, 20:25] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 20:25] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 20:25] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 20:25] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 20:25] = 0
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 20:25] = 0
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, 20:25] = 0
 
         # right heel strike
-        in_stance[R_FOOT_HEEL_R_IDX, 25:] = 1
-        in_stance[R_FOOT_HEEL_L_IDX, 25:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 25:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 25:] = 1
         # right foot plant
-        in_stance[R_FOOT_MIDFOOT_REAR_R_IDX, 30:] = 1
-        in_stance[R_FOOT_MIDFOOT_REAR_L_IDX, 30:] = 1
-        in_stance[R_FOOT_MIDFOOT_FRONT_R_IDX, 30:] = 1
-        in_stance[R_FOOT_MIDFOOT_FRONT_L_IDX, 30:] = 1
-        in_stance[R_FOOT_TOE_R_IDX, 30:] = 1
-        in_stance[R_FOOT_TOE_L_IDX, 30:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 30:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 30:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 30:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 30:] = 1
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 30:] = 1
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, 30:] = 1
 
         return in_stance
 
@@ -196,6 +196,32 @@ class Atlas(Robot):
 
     def get_body_name(self):
         return "pelvis"
+
+    def get_position_cost(self):
+        q_cost = self.PositionView()([1]*self.nq)
+        q_cost.pelvis_x = 0
+        q_cost.pelvis_y = 0
+        q_cost.pelvis_qx = 0
+        q_cost.pelvis_qy = 0
+        q_cost.pelvis_qz = 0
+        q_cost.pelvis_qw = 0
+        return q_cost
+
+    def get_velocity_cost(self):
+        v_cost = self.VelocityView()([1]*self.nv)
+        v_cost.pelvis_vx = 0
+        v_cost.pelvis_wx = 0
+        v_cost.pelvis_wy = 0
+        v_cost.pelvis_wz = 0
+        return v_cost
+
+    def get_periodic_view(self):
+        q_selector = self.PositionView()([True]*self.nq)
+        q_selector.pelvis_x = False
+        return q_selector
+
+    def increment_periodic_view(self, view, increment):
+        view.pelvis_x += increment
 
 def getAllJointIndicesInGeneralizedPositions(plant):
     for joint_limit in Atlas.JOINT_LIMITS.items():

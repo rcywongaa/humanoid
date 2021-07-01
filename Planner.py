@@ -18,7 +18,6 @@ from pydrake.all import (
     initializeAutoDiffGivenGradientMatrix, autoDiffToValueMatrix, autoDiffToGradientMatrix,
     AddUnitQuaternionConstraintOnPlant, PositionConstraint, OrientationConstraint
 )
-from pydrake.common.containers import namedview
 
 import sys
 from meshcat.servers.zmqserver import start_zmq_server_as_subprocess
@@ -32,53 +31,10 @@ running_as_notebook = True
 def autoDiffArrayEqual(a,b):
     return np.array_equal(a, b) and np.array_equal(autoDiffToGradientMatrix(a), autoDiffToGradientMatrix(b))
 
-# TODO: promote this to drake (and make a version with model_instance)
-def MakeNamedViewPositions(mbp, view_name):
-    names = [None]*mbp.num_positions()
-    for ind in range(mbp.num_joints()): 
-        joint = mbp.get_joint(JointIndex(ind))
-        # TODO: Handle planar joints, etc.
-        if joint.num_positions() != 1:
-            pdb.set_trace()
-        assert(joint.num_positions() == 1)
-        names[joint.position_start()] = joint.name()
-    for ind in mbp.GetFloatingBaseBodies():
-        body = mbp.get_body(ind)
-        start = body.floating_positions_start()
-        body_name = body.name()
-        names[start] = body_name+'_qw'
-        names[start+1] = body_name+'_qx'
-        names[start+2] = body_name+'_qy'
-        names[start+3] = body_name+'_qz'
-        names[start+4] = body_name+'_x'
-        names[start+5] = body_name+'_y'
-        names[start+6] = body_name+'_z'
-    return namedview(view_name, names)
-
-def MakeNamedViewVelocities(mbp, view_name):
-    names = [None]*mbp.num_velocities()
-    for ind in range(mbp.num_joints()): 
-        joint = mbp.get_joint(JointIndex(ind))
-        # TODO: Handle planar joints, etc.
-        assert(joint.num_velocities() == 1)
-        names[joint.velocity_start()] = joint.name()
-    for ind in mbp.GetFloatingBaseBodies():
-        body = mbp.get_body(ind)
-        start = body.floating_velocities_start() - mbp.num_positions()
-        body_name = body.name()
-        names[start] = body_name+'_wx'
-        names[start+1] = body_name+'_wy'
-        names[start+2] = body_name+'_wz'
-        names[start+3] = body_name+'_vx'
-        names[start+4] = body_name+'_vy'
-        names[start+5] = body_name+'_vz'
-    return namedview(view_name, names)
-
 def gait_optimization(robot_ctor):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, 1e-3)
     robot = robot_ctor(plant)
-    plant.Finalize()
     visualizer = ConnectMeshcatVisualizer(builder, 
         scene_graph=scene_graph, 
         zmq_url=zmq_url)
@@ -92,8 +48,8 @@ def gait_optimization(robot_ctor):
     q0 = plant.GetPositions(plant_context)
     body_frame = plant.GetFrameByName(robot.get_body_name())
 
-    PositionView = MakeNamedViewPositions(plant, "Positions")
-    VelocityView = MakeNamedViewVelocities(plant, "Velocities")
+    PositionView = robot.PositionView()
+    VelocityView = robot.VelocityView()
 
     mu = 1 # rubber on rubber
     total_mass = robot.get_total_mass(context)
@@ -136,22 +92,8 @@ def gait_optimization(robot_ctor):
     v_view = VelocityView(v)
     q0_view = PositionView(q0)
     # Joint costs
-    q_cost = PositionView([1]*nq)
-    v_cost = VelocityView([1]*nv)
-    q_cost.body_x = 0
-    q_cost.body_y = 0
-    q_cost.body_qx = 0
-    q_cost.body_qy = 0
-    q_cost.body_qz = 0
-    q_cost.body_qw = 0
-    q_cost.front_left_hip_roll = 5
-    q_cost.front_right_hip_roll = 5
-    q_cost.back_left_hip_roll = 5
-    q_cost.back_right_hip_roll = 5
-    v_cost.body_vx = 0
-    v_cost.body_wx = 0
-    v_cost.body_wy = 0
-    v_cost.body_wz = 0
+    q_cost = robot.get_position_cost()
+    v_cost = robot.get_velocity_cost()
     for n in range(N):
         # Joint limits
         prog.AddBoundingBoxConstraint(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits(), q[:,n])
@@ -357,8 +299,7 @@ def gait_optimization(robot_ctor):
 
     else:
         # Everything except body_x is periodic
-        q_selector = PositionView([True]*nq)
-        q_selector.body_x = False
+        q_selector = robot.get_periodic_view()
         prog.AddLinearConstraint(eq(q[q_selector,0], q[q_selector,-1]))
         prog.AddLinearConstraint(eq(v[:,0], v[:,-1]))
 
@@ -423,9 +364,9 @@ def gait_optimization(robot_ctor):
         if is_laterally_symmetric:
             if stride % 2 == 1:
                 qt = HalfStrideToFullStride(qt)
-                qt.body_x += stride_length/2.0
+                robot.increment_periodic_view(qt, stride_length/2.0)
             stride = stride // 2
-        qt.body_x += stride*stride_length
+        robot.increment_periodic_view(qt, stride*stride_length)
         plant.SetPositions(plant_context, qt)
         diagram.Publish(context)
 
