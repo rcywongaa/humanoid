@@ -420,14 +420,14 @@
       </geometry>
     </visual>
   </link>
-  <frame link="r_foot" name="r_foot_heel_l" xyz="-0.0876 -0.066 -0.07645"/>
-  <frame link="r_foot" name="r_foot_heel_r" xyz="-0.0876 0.0626 -0.07645"/>
-  <frame link="r_foot" name="r_foot_toe_l" xyz="0.1728 -0.066 -0.07645"/>
-  <frame link="r_foot" name="r_foot_toe_r" xyz="0.1728 0.0626 -0.07645"/>
-  <frame link="r_foot" name="r_foot_midfoot_front_l" xyz="0.086 -0.066 -0.07645"/>
-  <frame link="r_foot" name="r_foot_midfoot_front_r" xyz="0.086 0.0626 -0.07645"/>
-  <frame link="r_foot" name="r_foot_midfoot_rear_l" xyz="-0.0008 -0.066 -0.07645"/>
-  <frame link="r_foot" name="r_foot_midfoot_rear_r" xyz="-0.0008 0.0626 -0.07645"/>
+  <frame link="r_foot" name="r_foot_heel_l" xyz="-0.0876 0.0626 -0.07645"/>
+  <frame link="r_foot" name="r_foot_heel_r" xyz="-0.0876 -0.066 -0.07645"/>
+  <frame link="r_foot" name="r_foot_toe_l" xyz="0.1728 0.0626 -0.07645"/>
+  <frame link="r_foot" name="r_foot_toe_r" xyz="0.1728 -0.066 -0.07645"/>
+  <frame link="r_foot" name="r_foot_midfoot_front_l" xyz="0.086 0.0626 -0.07645"/>
+  <frame link="r_foot" name="r_foot_midfoot_front_r" xyz="0.086 -0.066 -0.07645"/>
+  <frame link="r_foot" name="r_foot_midfoot_rear_l" xyz="-0.0008 0.0626 -0.07645"/>
+  <frame link="r_foot" name="r_foot_midfoot_rear_r" xyz="-0.0008 -0.066 -0.07645"/>
   <link name="r_hand">
     <inertial>
       <mass value="0.5839"/>
