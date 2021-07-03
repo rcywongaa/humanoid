@@ -131,6 +131,12 @@ class Atlas(Robot):
 
     def set_home(self, plant, context):
         plant.SetFreeBodyPose(context, plant.GetBodyByName("pelvis"), RigidTransform([0, 0, Atlas.PELVIS_HEIGHT]))
+        # Add a slight knee bend to avoid locking legs
+        bend = 0.2
+        plant.GetJointByName("l_leg_hpy").set_angle(context, -bend)
+        plant.GetJointByName("r_leg_hpy").set_angle(context, -bend)
+        plant.GetJointByName("l_leg_kny").set_angle(context, bend)
+        plant.GetJointByName("r_leg_kny").set_angle(context, bend)
 
     def get_stance_schedule(self):
         in_stance = np.ones((self.get_num_contacts(), self.get_num_timesteps()))
