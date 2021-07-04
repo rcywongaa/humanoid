@@ -130,9 +130,10 @@ class Atlas(Robot):
             self.plant.GetFrameByName("r_foot_midfoot_rear_r")]
 
     def set_home(self, plant, context):
-        plant.SetFreeBodyPose(context, plant.GetBodyByName("pelvis"), RigidTransform([0, 0, Atlas.PELVIS_HEIGHT]))
+        plant.SetFreeBodyPose(context, plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.860+0.07645]))
         # Add a slight knee bend to avoid locking legs
-        bend = 0.2
+        bend = 0.3
+        # Note that at 0.2 bend, legs are actually straighter (pelvis height is higher)
         plant.GetJointByName("l_leg_hpy").set_angle(context, -bend)
         plant.GetJointByName("r_leg_hpy").set_angle(context, -bend)
         plant.GetJointByName("l_leg_kny").set_angle(context, bend)
