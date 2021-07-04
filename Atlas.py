@@ -142,52 +142,61 @@ class Atlas(Robot):
     def get_stance_schedule(self):
         in_stance = np.ones((self.get_num_contacts(), self.get_num_timesteps()))
         # left foot up
-        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 5:10] = 0
-        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 5:10] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 5:10] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 5:10] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 5:10] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 5:10] = 0
-        in_stance[Atlas.L_FOOT_TOE_R_IDX, 5:10] = 0
-        in_stance[Atlas.L_FOOT_TOE_L_IDX, 5:10] = 0
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 5:15] = 0
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 5:15] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 5:20] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 5:20] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 5:20] = 0
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 5:20] = 0
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, 5:20] = 0
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, 5:20] = 0
 
         # left heel strike
-        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 10:] = 1
-        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 10:] = 1
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 15:] = 1
         # left foot plant
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 15:] = 1
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 15:] = 1
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 15:] = 1
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 15:] = 1
-        in_stance[Atlas.L_FOOT_TOE_R_IDX, 15:] = 1
-        in_stance[Atlas.L_FOOT_TOE_L_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 20:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 20:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 20:] = 1
+        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 20:] = 1
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, 20:] = 1
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, 20:] = 1
 
-        # right heel off
-        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 15:25] = 0
-        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 15:25] = 0
-        # right toe off
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 20:25] = 0
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 20:25] = 0
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 20:25] = 0
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 20:25] = 0
-        in_stance[Atlas.R_FOOT_TOE_R_IDX, 20:25] = 0
-        in_stance[Atlas.R_FOOT_TOE_L_IDX, 20:25] = 0
+        # right foot up
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 25:35] = 0
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 25:35] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 25:40] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 25:40] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 25:40] = 0
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 25:40] = 0
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 25:40] = 0
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 25:40] = 0
+        ## right heel off
+        #in_stance[Atlas.R_FOOT_HEEL_R_IDX, 15:25] = 0
+        #in_stance[Atlas.R_FOOT_HEEL_L_IDX, 15:25] = 0
+        ## right toe off
+        #in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 20:30] = 0
+        #in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 20:30] = 0
+        #in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 20:30] = 0
+        #in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 20:30] = 0
+        #in_stance[Atlas.R_FOOT_TOE_R_IDX, 20:30] = 0
+        #in_stance[Atlas.R_FOOT_TOE_L_IDX, 20:30] = 0
 
         # right heel strike
-        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 25:] = 1
-        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 25:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 35:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 35:] = 1
         # right foot plant
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 30:] = 1
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 30:] = 1
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 30:] = 1
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 30:] = 1
-        in_stance[Atlas.R_FOOT_TOE_R_IDX, 30:] = 1
-        in_stance[Atlas.R_FOOT_TOE_L_IDX, 30:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 40:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 40:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 40:] = 1
+        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 40:] = 1
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 40:] = 1
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, 40:] = 1
 
         return in_stance
 
     def get_num_timesteps(self):
-        return 41
+        return 46
 
     def get_laterally_symmetric(self):
         return False
@@ -196,10 +205,10 @@ class Atlas(Robot):
         return False
 
     def get_stride_length(self):
-        return 0.7
+        return 0.35
 
     def get_speed(self):
-        return 1.4
+        return 0.35
 
     def get_body_name(self):
         return "pelvis"
