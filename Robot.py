@@ -111,6 +111,14 @@ class Robot(ABC):
     def increment_periodic_view(self, view, increment):
         pass
 
+    @abstractmethod
+    def add_periodic_constraints(self, prog):
+        pass
+
+    @abstractmethod
+    def HalfStrideToFullStride(self, a):
+        pass
+
     def get_total_mass(self, context):
         return sum(self.plant.get_body(index).get_mass(context) for index in self.plant.GetBodyIndices(self.model))
 

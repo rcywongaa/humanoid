@@ -105,7 +105,7 @@ def gait_optimization(robot_ctor):
         prog.AddConstraint(OrientationConstraint(plant, 
                                                  body_frame, RotationMatrix(),
                                                  plant.world_frame(), RotationMatrix(), 
-                                                 0.1, context[n]), q[:,n])
+                                                 0.2, context[n]), q[:,n])
         # Initial guess for all joint angles is the home position
         prog.SetInitialGuess(q[:,n], q0)  # Solvers get stuck if the quaternion is initialized with all zeros.
 
@@ -263,40 +263,12 @@ def gait_optimization(robot_ctor):
 
     # Periodicity constraints
     if is_laterally_symmetric:
-        # Joints
-        def AddAntiSymmetricPair(a, b):
-            prog.AddLinearEqualityConstraint(a[0] == -b[-1])
-            prog.AddLinearEqualityConstraint(a[-1] == -b[0])
-        def AddSymmetricPair(a, b):
-            prog.AddLinearEqualityConstraint(a[0] == b[-1])
-            prog.AddLinearEqualityConstraint(a[-1] == b[0])
-
-        AddAntiSymmetricPair(q_view.front_left_hip_roll,        
-                             q_view.front_right_hip_roll)
-        AddSymmetricPair(q_view.front_left_hip_pitch,
-                         q_view.front_right_hip_pitch)
-        AddSymmetricPair(q_view.front_left_knee, q_view.front_right_knee)
-        AddAntiSymmetricPair(q_view.back_left_hip_roll, 
-                             q_view.back_right_hip_roll)
-        AddSymmetricPair(q_view.back_left_hip_pitch, 
-                         q_view.back_right_hip_pitch)
-        AddSymmetricPair(q_view.back_left_knee, q_view.back_right_knee)               
-        prog.AddLinearEqualityConstraint(q_view.body_y[0] == -q_view.body_y[-1])
-        prog.AddLinearEqualityConstraint(q_view.body_z[0] == q_view.body_z[-1])
-        # Body orientation must be in the xz plane:
-        prog.AddBoundingBoxConstraint(0, 0, q_view.body_qx[[0,-1]])
-        prog.AddBoundingBoxConstraint(0, 0, q_view.body_qz[[0,-1]])
-
-        # Floating base velocity
-        prog.AddLinearEqualityConstraint(v_view.body_vx[0] == v_view.body_vx[-1])
-        prog.AddLinearEqualityConstraint(v_view.body_vy[0] == -v_view.body_vy[-1])
-        prog.AddLinearEqualityConstraint(v_view.body_vz[0] == v_view.body_vz[-1])
+        robot.add_periodic_constraints(prog, q_view, v_view)
 
         # CoM velocity
         prog.AddLinearEqualityConstraint(comdot[0,0] == comdot[0,-1])
         prog.AddLinearEqualityConstraint(comdot[1,0] == -comdot[1,-1])
         prog.AddLinearEqualityConstraint(comdot[2,0] == comdot[2,-1])
-
     else:
         # Everything except body_x is periodic
         q_selector = robot.get_periodic_view()
@@ -311,7 +283,7 @@ def gait_optimization(robot_ctor):
     prog.SetSolverOption(snopt, 'Major Optimality Tolerance', 1e-4)
     prog.SetSolverOption(snopt, 'Superbasics limit', 2000)
     prog.SetSolverOption(snopt, 'Linesearch tolerance', 0.9)
-    #prog.SetSolverOption(snopt, 'Print file', 'snopt.out')
+    prog.SetSolverOption(snopt, 'Print file', 'snopt.out')
 
     # TODO a few more costs/constraints from 
     # from https://github.com/RobotLocomotion/LittleDog/blob/master/gaitOptimization.m 
@@ -319,32 +291,6 @@ def gait_optimization(robot_ctor):
     result = Solve(prog)
     print(f"{result.get_solver_id().name()}: {result.is_success()}")
     #print(result.is_success())  # We expect this to be false if iterations are limited.
-
-    def HalfStrideToFullStride(a):
-        b = PositionView(np.copy(a))
-
-        b.body_y = -a.body_y
-        # Mirror quaternion so that roll=-roll, yaw=-yaw
-        b.body_qx = -a.body_qx
-        b.body_qz = -a.body_qz
-
-        b.front_left_hip_roll = -a.front_right_hip_roll
-        b.front_right_hip_roll = -a.front_left_hip_roll
-        b.back_left_hip_roll = -a.back_right_hip_roll
-        b.back_right_hip_roll = -a.back_left_hip_roll
-
-        b.front_left_hip_pitch = a.front_right_hip_pitch
-        b.front_right_hip_pitch = a.front_left_hip_pitch
-        b.back_left_hip_pitch = a.back_right_hip_pitch
-        b.back_right_hip_pitch = a.back_left_hip_pitch
-
-        b.front_left_knee = a.front_right_knee
-        b.front_right_knee = a.front_left_knee
-        b.back_left_knee = a.back_right_knee
-        b.back_right_knee = a.back_left_knee
-
-        return b
-
 
     # Animate trajectory
     context = diagram.CreateDefaultContext()
@@ -363,7 +309,7 @@ def gait_optimization(robot_ctor):
         qt = PositionView(q_sol.value(ts))
         if is_laterally_symmetric:
             if stride % 2 == 1:
-                qt = HalfStrideToFullStride(qt)
+                qt = robot.HalfStrideToFullStride(qt)
                 robot.increment_periodic_view(qt, stride_length/2.0)
             stride = stride // 2
         robot.increment_periodic_view(qt, stride*stride_length)
@@ -378,7 +324,9 @@ littledog_walking_trot = partial(LittleDog, gait="walking_trot")
 littledog_running_trot = partial(LittleDog, gait="running_trot")
 littledog_rotary_gallop = partial(LittleDog, gait="rotary_gallop")
 littledog_bound = partial(LittleDog, gait="bound")
+
 # gait_optimization(littledog_walking_trot)
+# gait_optimization(littledog_rotary_gallop)
 
 gait_optimization(Atlas)
 

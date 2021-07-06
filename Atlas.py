@@ -88,22 +88,36 @@ class Atlas(Robot):
     NUM_ACTUATED_DOF = 30
     TOTAL_DOF = 37
 
+    # L_FOOT_HEEL_L_IDX          = 0
+    # L_FOOT_HEEL_R_IDX          = 1
+    # L_FOOT_TOE_L_IDX           = 2
+    # L_FOOT_TOE_R_IDX           = 3
+    # L_FOOT_MIDFOOT_FRONT_L_IDX = 4
+    # L_FOOT_MIDFOOT_FRONT_R_IDX = 5
+    # L_FOOT_MIDFOOT_REAR_L_IDX  = 6
+    # L_FOOT_MIDFOOT_REAR_R_IDX  = 7
+    # R_FOOT_HEEL_L_IDX          = 8
+    # R_FOOT_HEEL_R_IDX          = 9
+    # R_FOOT_TOE_L_IDX           = 10
+    # R_FOOT_TOE_R_IDX           = 11
+    # R_FOOT_MIDFOOT_FRONT_L_IDX = 12
+    # R_FOOT_MIDFOOT_FRONT_R_IDX = 13
+    # R_FOOT_MIDFOOT_REAR_L_IDX  = 14
+    # R_FOOT_MIDFOOT_REAR_R_IDX  = 15
+
     L_FOOT_HEEL_L_IDX          = 0
     L_FOOT_HEEL_R_IDX          = 1
     L_FOOT_TOE_L_IDX           = 2
     L_FOOT_TOE_R_IDX           = 3
-    L_FOOT_MIDFOOT_FRONT_L_IDX = 4
-    L_FOOT_MIDFOOT_FRONT_R_IDX = 5
-    L_FOOT_MIDFOOT_REAR_L_IDX  = 6
-    L_FOOT_MIDFOOT_REAR_R_IDX  = 7
-    R_FOOT_HEEL_L_IDX          = 8
-    R_FOOT_HEEL_R_IDX          = 9
-    R_FOOT_TOE_L_IDX           = 10
-    R_FOOT_TOE_R_IDX           = 11
-    R_FOOT_MIDFOOT_FRONT_L_IDX = 12
-    R_FOOT_MIDFOOT_FRONT_R_IDX = 13
-    R_FOOT_MIDFOOT_REAR_L_IDX  = 14
-    R_FOOT_MIDFOOT_REAR_R_IDX  = 15
+    R_FOOT_HEEL_L_IDX          = 4
+    R_FOOT_HEEL_R_IDX          = 5
+    R_FOOT_TOE_L_IDX           = 6
+    R_FOOT_TOE_R_IDX           = 7
+
+    L_FOOT_HEEL_IDX = [L_FOOT_HEEL_R_IDX, L_FOOT_HEEL_L_IDX]
+    R_FOOT_HEEL_IDX = [R_FOOT_HEEL_R_IDX, R_FOOT_HEEL_L_IDX]
+    L_FOOT_TOE_IDX = [L_FOOT_TOE_R_IDX, L_FOOT_TOE_L_IDX]
+    R_FOOT_TOE_IDX = [R_FOOT_TOE_R_IDX, R_FOOT_TOE_L_IDX]
 
     def __init__(self, plant):
         package_map = PackageMap()
@@ -116,61 +130,117 @@ class Atlas(Robot):
             self.plant.GetFrameByName("l_foot_heel_r"),
             self.plant.GetFrameByName("l_foot_toe_l"),
             self.plant.GetFrameByName("l_foot_toe_r"),
-            self.plant.GetFrameByName("l_foot_midfoot_front_l"),
-            self.plant.GetFrameByName("l_foot_midfoot_front_r"),
-            self.plant.GetFrameByName("l_foot_midfoot_rear_l"),
-            self.plant.GetFrameByName("l_foot_midfoot_rear_r"),
+            # self.plant.GetFrameByName("l_foot_midfoot_front_l"),
+            # self.plant.GetFrameByName("l_foot_midfoot_front_r"),
+            # self.plant.GetFrameByName("l_foot_midfoot_rear_l"),
+            # self.plant.GetFrameByName("l_foot_midfoot_rear_r"),
             self.plant.GetFrameByName("r_foot_heel_l"),
             self.plant.GetFrameByName("r_foot_heel_r"),
             self.plant.GetFrameByName("r_foot_toe_l"),
             self.plant.GetFrameByName("r_foot_toe_r"),
-            self.plant.GetFrameByName("r_foot_midfoot_front_l"),
-            self.plant.GetFrameByName("r_foot_midfoot_front_r"),
-            self.plant.GetFrameByName("r_foot_midfoot_rear_l"),
-            self.plant.GetFrameByName("r_foot_midfoot_rear_r")]
+            # self.plant.GetFrameByName("r_foot_midfoot_front_l"),
+            # self.plant.GetFrameByName("r_foot_midfoot_front_r"),
+            # self.plant.GetFrameByName("r_foot_midfoot_rear_l"),
+            # self.plant.GetFrameByName("r_foot_midfoot_rear_r")
+        ]
 
     def set_home(self, plant, context):
-        plant.SetFreeBodyPose(context, plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.860+0.07645]))
+        plant.SetFreeBodyPose(context, plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.856+0.07645]))
         # Add a slight knee bend to avoid locking legs
-        bend = 0.3
-        # Note that at 0.2 bend, legs are actually straighter (pelvis height is higher)
-        plant.GetJointByName("l_leg_hpy").set_angle(context, -bend)
-        plant.GetJointByName("r_leg_hpy").set_angle(context, -bend)
-        plant.GetJointByName("l_leg_kny").set_angle(context, bend)
-        plant.GetJointByName("r_leg_kny").set_angle(context, bend)
+        hip_angle = -0.2
+        knee_angle = 0.4
+        ankle_angle = -0.2
+        plant.GetJointByName("l_leg_hpy").set_angle(context, hip_angle)
+        plant.GetJointByName("r_leg_hpy").set_angle(context, hip_angle)
+        plant.GetJointByName("l_leg_kny").set_angle(context, knee_angle)
+        plant.GetJointByName("r_leg_kny").set_angle(context, knee_angle)
+        plant.GetJointByName("l_leg_aky").set_angle(context, ankle_angle)
+        plant.GetJointByName("r_leg_aky").set_angle(context, ankle_angle)
+        plant.GetJointByName("back_bky").set_angle(context, 0.05)
 
     def get_stance_schedule(self):
+        # https://www.semanticscholar.org/paper/Algorithmic-Foundations-of-Realizing-Multi-Contact-Reher-Hereid/38c1d2cc136415076aa5d5c903202f4491c327bb/figure/2
+        in_stance = np.zeros((self.get_num_contacts(), self.get_num_timesteps()))
+
+        # Right heel strike, Left toe already planted
+        t = 0
+        in_stance[Atlas.R_FOOT_HEEL_IDX, t:] = 1
+        in_stance[Atlas.L_FOOT_TOE_IDX, t:] = 1
+
+        # Right toe strike
+        t = 12
+        in_stance[Atlas.R_FOOT_TOE_IDX, t:] = 1
+
+        #Left toe lift
+        t = 24
+        in_stance[Atlas.L_FOOT_TOE_IDX, t:] = 0
+
+        # Right heel lift
+        t = 36
+        in_stance[Atlas.R_FOOT_HEEL_IDX, t:] = 0
+
+        '''
+        # Left heel strike
+        t = 50
+        in_stance[Atlas.L_FOOT_HEEL_IDX, t:] = 1
+
+        # Left toe strike
+        t = 62
+        in_stance[Atlas.L_FOOT_TOE_IDX, t:]= 1
+
+        # Right toe lift
+        t = 74
+        in_stance[Atlas.R_FOOT_TOE_IDX, t:] = 0
+
+        # Left heel lift
+        t = 86
+        in_stance[Atlas.L_FOOT_HEEL_IDX, t:] = 0
+
+        # Right heel strike
+        t = 100
+        in_stance[Atlas.R_FOOT_HEEL_IDX, t:] = 1
+        '''
+
+        return in_stance
+    '''
+    def get_stance_schedule(self):
+        # LH XXXXXXXXXX----------XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        # LT XXXXXXXXXX---------------XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        # RH XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX----------XXXXXXXXXX
+        # RT XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX---------------XXXXX
+        # t  0123456789012345678901234567890123456789012345678901234567890
+
         in_stance = np.ones((self.get_num_contacts(), self.get_num_timesteps()))
         # left foot up
-        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 5:15] = 0
-        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 5:15] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 5:20] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 5:20] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 5:20] = 0
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 5:20] = 0
-        in_stance[Atlas.L_FOOT_TOE_R_IDX, 5:20] = 0
-        in_stance[Atlas.L_FOOT_TOE_L_IDX, 5:20] = 0
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 10:20] = 0
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 10:20] = 0
+        # in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 10:25] = 0
+        # in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 10:25] = 0
+        # in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 10:25] = 0
+        # in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 10:25] = 0
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, 10:25] = 0
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, 10:25] = 0
 
         # left heel strike
-        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 15:] = 1
-        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 15:] = 1
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, 20:] = 1
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, 20:] = 1
         # left foot plant
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 20:] = 1
-        in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 20:] = 1
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 20:] = 1
-        in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 20:] = 1
-        in_stance[Atlas.L_FOOT_TOE_R_IDX, 20:] = 1
-        in_stance[Atlas.L_FOOT_TOE_L_IDX, 20:] = 1
+        # in_stance[Atlas.L_FOOT_MIDFOOT_REAR_R_IDX, 25:] = 1
+        # in_stance[Atlas.L_FOOT_MIDFOOT_REAR_L_IDX, 25:] = 1
+        # in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_R_IDX, 25:] = 1
+        # in_stance[Atlas.L_FOOT_MIDFOOT_FRONT_L_IDX, 25:] = 1
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, 25:] = 1
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, 25:] = 1
 
         # right foot up
-        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 25:35] = 0
-        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 25:35] = 0
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 25:40] = 0
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 25:40] = 0
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 25:40] = 0
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 25:40] = 0
-        in_stance[Atlas.R_FOOT_TOE_R_IDX, 25:40] = 0
-        in_stance[Atlas.R_FOOT_TOE_R_IDX, 25:40] = 0
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 35:45] = 0
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 35:45] = 0
+        # in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 35:50] = 0
+        # in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 35:50] = 0
+        # in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 35:50] = 0
+        # in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 35:50] = 0
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 35:50] = 0
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 35:50] = 0
         ## right heel off
         #in_stance[Atlas.R_FOOT_HEEL_R_IDX, 15:25] = 0
         #in_stance[Atlas.R_FOOT_HEEL_L_IDX, 15:25] = 0
@@ -183,23 +253,24 @@ class Atlas(Robot):
         #in_stance[Atlas.R_FOOT_TOE_L_IDX, 20:30] = 0
 
         # right heel strike
-        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 35:] = 1
-        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 35:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, 45:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, 45:] = 1
         # right foot plant
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 40:] = 1
-        in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 40:] = 1
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 40:] = 1
-        in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 40:] = 1
-        in_stance[Atlas.R_FOOT_TOE_R_IDX, 40:] = 1
-        in_stance[Atlas.R_FOOT_TOE_L_IDX, 40:] = 1
+        # in_stance[Atlas.R_FOOT_MIDFOOT_REAR_R_IDX, 50:] = 1
+        # in_stance[Atlas.R_FOOT_MIDFOOT_REAR_L_IDX, 40:] = 1
+        # in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_R_IDX, 50:] = 1
+        # in_stance[Atlas.R_FOOT_MIDFOOT_FRONT_L_IDX, 50:] = 1
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, 50:] = 1
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, 50:] = 1
 
         return in_stance
+    '''
 
     def get_num_timesteps(self):
-        return 46
+        return 51
 
     def get_laterally_symmetric(self):
-        return False
+        return True
 
     def get_check_self_collision(self):
         return False
@@ -238,6 +309,65 @@ class Atlas(Robot):
 
     def increment_periodic_view(self, view, increment):
         view.pelvis_x += increment
+
+    def add_periodic_constraints(self, prog, q_view, v_view):
+        # Joints
+        def AddAntiSymmetricPair(a, b):
+            prog.AddLinearEqualityConstraint(a[0] == -b[-1])
+            prog.AddLinearEqualityConstraint(a[-1] == -b[0])
+        def AddSymmetricPair(a, b):
+            prog.AddLinearEqualityConstraint(a[0] == b[-1])
+            prog.AddLinearEqualityConstraint(a[-1] == b[0])
+
+        # TODO: Add symmetry / anti-symmetry constraints for
+        AddAntiSymmetricPair(q_view.l_arm_elx, q_view.r_arm_elx)
+        AddSymmetricPair(q_view.l_arm_ely, q_view.r_arm_ely)
+        AddAntiSymmetricPair(q_view.l_arm_shx, q_view.r_arm_shx)
+        AddAntiSymmetricPair(q_view.l_arm_shz, q_view.r_arm_shz)
+        AddAntiSymmetricPair(q_view.l_arm_mwx, q_view.r_arm_mwx)
+        AddSymmetricPair(q_view.l_arm_uwy, q_view.r_arm_uwy)
+        AddSymmetricPair(q_view.l_arm_lwy, q_view.r_arm_lwy)
+        AddAntiSymmetricPair(q_view.l_leg_akx, q_view.r_leg_akx)
+        AddSymmetricPair(q_view.l_leg_aky, q_view.r_leg_aky)
+        AddAntiSymmetricPair(q_view.l_leg_hpx, q_view.r_leg_hpx)
+        AddSymmetricPair(q_view.l_leg_hpy, q_view.r_leg_hpy)
+        AddAntiSymmetricPair(q_view.l_leg_hpz, q_view.r_leg_hpz)
+        AddSymmetricPair(q_view.l_leg_kny, q_view.r_leg_kny)
+
+        prog.AddLinearEqualityConstraint(q_view.pelvis_y[0] == -q_view.pelvis_y[-1])
+        prog.AddLinearEqualityConstraint(q_view.pelvis_z[0] == q_view.pelvis_z[-1])
+        # Body orientation must be in the xz plane:
+        prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qx[[0,-1]])
+        prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qz[[0,-1]])
+
+        # Floating base velocity
+        prog.AddLinearEqualityConstraint(v_view.pelvis_vx[0] == v_view.pelvis_vx[-1])
+        prog.AddLinearEqualityConstraint(v_view.pelvis_vy[0] == -v_view.pelvis_vy[-1])
+        prog.AddLinearEqualityConstraint(v_view.pelvis_vz[0] == v_view.pelvis_vz[-1])
+
+    def HalfStrideToFullStride(self, a):
+        b = self.PositionView()(np.copy(a))
+
+        b.pelvis_y = -a.pelvis_y
+        b.pelvis_qx = -a.pelvis_qx
+        b.pelvis_qz = -a.pelvis_qz
+
+        b.l_arm_elx = -a.r_arm_elx
+        b.l_arm_ely = a.r_arm_ely
+        b.l_arm_shx = -a.r_arm_shx
+        b.l_arm_shz = -a.r_arm_shz
+        b.l_arm_mwx = -a.r_arm_mwx
+        b.l_arm_uwy = a.r_arm_uwy
+        b.l_arm_lwy = a.r_arm_lwy
+        b.l_leg_akx = -a.r_leg_akx
+        b.l_leg_aky = a.r_leg_aky
+        b.l_leg_hpx = -a.r_leg_hpx
+        b.l_leg_hpy = a.r_leg_hpy
+        b.l_leg_hpz = -a.r_leg_hpz
+        b.l_leg_kny = a.r_leg_kny
+
+        return b
+
 
 def getAllJointIndicesInGeneralizedPositions(plant):
     for joint_limit in Atlas.JOINT_LIMITS.items():

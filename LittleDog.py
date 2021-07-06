@@ -53,7 +53,7 @@ class LittleDog(Robot):
         else:
             raise RuntimeError('Unknown gait.')
 
-    def get_contact_frames(self): 
+    def get_contact_frames(self):
         return [
             self.plant.GetFrameByName('front_left_foot_center'),
             self.plant.GetFrameByName('front_right_foot_center'),
@@ -128,3 +128,59 @@ class LittleDog(Robot):
 
     def increment_periodic_view(self, view, increment):
         view.body_x += increment
+
+    def add_periodic_constraints(self, prog, q_view, v_view):
+        # Joints
+        def AddAntiSymmetricPair(a, b):
+            prog.AddLinearEqualityConstraint(a[0] == -b[-1])
+            prog.AddLinearEqualityConstraint(a[-1] == -b[0])
+        def AddSymmetricPair(a, b):
+            prog.AddLinearEqualityConstraint(a[0] == b[-1])
+            prog.AddLinearEqualityConstraint(a[-1] == b[0])
+
+        AddAntiSymmetricPair(q_view.front_left_hip_roll,
+                             q_view.front_right_hip_roll)
+        AddSymmetricPair(q_view.front_left_hip_pitch,
+                         q_view.front_right_hip_pitch)
+        AddSymmetricPair(q_view.front_left_knee, q_view.front_right_knee)
+        AddAntiSymmetricPair(q_view.back_left_hip_roll,
+                             q_view.back_right_hip_roll)
+        AddSymmetricPair(q_view.back_left_hip_pitch,
+                         q_view.back_right_hip_pitch)
+        AddSymmetricPair(q_view.back_left_knee, q_view.back_right_knee)
+        prog.AddLinearEqualityConstraint(q_view.body_y[0] == -q_view.body_y[-1])
+        prog.AddLinearEqualityConstraint(q_view.body_z[0] == q_view.body_z[-1])
+        # Body orientation must be in the xz plane:
+        prog.AddBoundingBoxConstraint(0, 0, q_view.body_qx[[0,-1]])
+        prog.AddBoundingBoxConstraint(0, 0, q_view.body_qz[[0,-1]])
+
+        # Floating base velocity
+        prog.AddLinearEqualityConstraint(v_view.body_vx[0] == v_view.body_vx[-1])
+        prog.AddLinearEqualityConstraint(v_view.body_vy[0] == -v_view.body_vy[-1])
+        prog.AddLinearEqualityConstraint(v_view.body_vz[0] == v_view.body_vz[-1])
+
+    def HalfStrideToFullStride(self, a):
+        b = self.PositionView()(np.copy(a))
+
+        b.body_y = -a.body_y
+        # Mirror quaternion so that roll=-roll, yaw=-yaw
+        b.body_qx = -a.body_qx
+        b.body_qz = -a.body_qz
+
+        b.front_left_hip_roll = -a.front_right_hip_roll
+        b.front_right_hip_roll = -a.front_left_hip_roll
+        b.back_left_hip_roll = -a.back_right_hip_roll
+        b.back_right_hip_roll = -a.back_left_hip_roll
+
+        b.front_left_hip_pitch = a.front_right_hip_pitch
+        b.front_right_hip_pitch = a.front_left_hip_pitch
+        b.back_left_hip_pitch = a.back_right_hip_pitch
+        b.back_right_hip_pitch = a.back_left_hip_pitch
+
+        b.front_left_knee = a.front_right_knee
+        b.front_right_knee = a.front_left_knee
+        b.back_left_knee = a.back_right_knee
+        b.back_right_knee = a.back_left_knee
+
+        return b
+
