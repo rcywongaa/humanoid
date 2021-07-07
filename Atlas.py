@@ -276,10 +276,10 @@ class Atlas(Robot):
         return False
 
     def get_stride_length(self):
-        return 0.35
+        return 0.7
 
     def get_speed(self):
-        return 0.35
+        return 1.4
 
     def get_body_name(self):
         return "pelvis"
@@ -319,7 +319,6 @@ class Atlas(Robot):
             prog.AddLinearEqualityConstraint(a[0] == b[-1])
             prog.AddLinearEqualityConstraint(a[-1] == b[0])
 
-        # TODO: Add symmetry / anti-symmetry constraints for
         AddAntiSymmetricPair(q_view.l_arm_elx, q_view.r_arm_elx)
         AddSymmetricPair(q_view.l_arm_ely, q_view.r_arm_ely)
         AddAntiSymmetricPair(q_view.l_arm_shx, q_view.r_arm_shx)
@@ -327,12 +326,18 @@ class Atlas(Robot):
         AddAntiSymmetricPair(q_view.l_arm_mwx, q_view.r_arm_mwx)
         AddSymmetricPair(q_view.l_arm_uwy, q_view.r_arm_uwy)
         AddSymmetricPair(q_view.l_arm_lwy, q_view.r_arm_lwy)
+
         AddAntiSymmetricPair(q_view.l_leg_akx, q_view.r_leg_akx)
         AddSymmetricPair(q_view.l_leg_aky, q_view.r_leg_aky)
         AddAntiSymmetricPair(q_view.l_leg_hpx, q_view.r_leg_hpx)
         AddSymmetricPair(q_view.l_leg_hpy, q_view.r_leg_hpy)
         AddAntiSymmetricPair(q_view.l_leg_hpz, q_view.r_leg_hpz)
         AddSymmetricPair(q_view.l_leg_kny, q_view.r_leg_kny)
+
+        prog.AddLinearEqualityConstraint(q_view.back_bkx[0] == -q_view.back_bkx[-1])
+        prog.AddLinearEqualityConstraint(q_view.back_bky[0] == q_view.back_bky[-1])
+        prog.AddLinearEqualityConstraint(q_view.back_bkz[0] == -q_view.back_bkz[-1])
+        prog.AddLinearEqualityConstraint(q_view.neck_ay[0] == q_view.neck_ay[-1])
 
         prog.AddLinearEqualityConstraint(q_view.pelvis_y[0] == -q_view.pelvis_y[-1])
         prog.AddLinearEqualityConstraint(q_view.pelvis_z[0] == q_view.pelvis_z[-1])
@@ -353,18 +358,48 @@ class Atlas(Robot):
         b.pelvis_qz = -a.pelvis_qz
 
         b.l_arm_elx = -a.r_arm_elx
+        b.r_arm_elx = -a.l_arm_elx
+
         b.l_arm_ely = a.r_arm_ely
+        b.r_arm_ely = a.l_arm_ely
+
         b.l_arm_shx = -a.r_arm_shx
+        b.r_arm_shx = -a.l_arm_shx
+
         b.l_arm_shz = -a.r_arm_shz
+        b.r_arm_shz = -a.l_arm_shz
+
         b.l_arm_mwx = -a.r_arm_mwx
+        b.r_arm_mwx = -a.l_arm_mwx
+
         b.l_arm_uwy = a.r_arm_uwy
+        b.r_arm_uwy = a.l_arm_uwy
+
         b.l_arm_lwy = a.r_arm_lwy
+        b.r_arm_lwy = a.l_arm_lwy
+
         b.l_leg_akx = -a.r_leg_akx
+        b.r_leg_akx = -a.l_leg_akx
+
         b.l_leg_aky = a.r_leg_aky
+        b.r_leg_aky = a.l_leg_aky
+
         b.l_leg_hpx = -a.r_leg_hpx
+        b.r_leg_hpx = -a.l_leg_hpx
+
         b.l_leg_hpy = a.r_leg_hpy
+        b.r_leg_hpy = a.l_leg_hpy
+
         b.l_leg_hpz = -a.r_leg_hpz
+        b.r_leg_hpz = -a.l_leg_hpz
+
         b.l_leg_kny = a.r_leg_kny
+        b.r_leg_kny = a.l_leg_kny
+
+        b.back_bkx = -a.back_bkx
+        b.back_bky = a.back_bky
+        b.back_bkz = -a.back_bkz
+        b.neck_ay = a.neck_ay
 
         return b
 
