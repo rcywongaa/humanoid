@@ -99,6 +99,12 @@ class LittleDog(Robot):
     def get_body_name(self):
         return "body"
 
+    def max_body_rotation(self):
+        return 0.1
+
+    def min_com_height(self):
+        return 0.125
+
     def get_position_cost(self):
         q_cost = self.PositionView()([1]*self.nq)
         q_cost.body_x = 0

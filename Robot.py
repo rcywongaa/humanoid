@@ -96,6 +96,14 @@ class Robot(ABC):
         pass
 
     @abstractmethod
+    def max_body_rotation(self):
+        pass
+
+    @abstractmethod
+    def min_com_height(self):
+        pass
+
+    @abstractmethod
     def get_position_cost(self):
         pass
 

@@ -105,7 +105,7 @@ def gait_optimization(robot_ctor):
         prog.AddConstraint(OrientationConstraint(plant, 
                                                  body_frame, RotationMatrix(),
                                                  plant.world_frame(), RotationMatrix(), 
-                                                 0.2, context[n]), q[:,n])
+                                                 robot.max_body_rotation(), context[n]), q[:,n])
         # Initial guess for all joint angles is the home position
         prog.SetInitialGuess(q[:,n], q0)  # Solvers get stuck if the quaternion is initialized with all zeros.
 
@@ -155,7 +155,7 @@ def gait_optimization(robot_ctor):
     # Initial CoM z vel == 0
     prog.AddBoundingBoxConstraint(0, 0, comdot[2,0])
     # CoM height
-    prog.AddBoundingBoxConstraint(.125, np.inf, com[2,:])
+    prog.AddBoundingBoxConstraint(robot.min_com_height(), np.inf, com[2,:])
     # CoM x velocity >= 0
     prog.AddBoundingBoxConstraint(0, np.inf, comdot[0,:])
     # CoM final x position

@@ -216,6 +216,18 @@ class Atlas(Robot):
     def get_body_name(self):
         return "pelvis"
 
+    def max_body_rotation(self):
+        '''
+        Pelvic Rotation Effect on Human Stride Length: Releasing the Constraint of Obstetric Selection
+        KATHERINE K. WHITCOME, E. ELIZABETH MILLER, AND JESSICA L. BURNS
+        https://anatomypubs.onlinelibrary.wiley.com/doi/pdf/10.1002/ar.23551
+        Pelvis rotation is around 10 degrees for average human walking speed
+        '''
+        return 0.2
+
+    def min_com_height(self):
+        return 0.7
+
     def get_position_cost(self):
         q_cost = self.PositionView()([1]*self.nq)
         q_cost.pelvis_x = 0
