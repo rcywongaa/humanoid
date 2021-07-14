@@ -246,7 +246,7 @@ def gait_optimization(robot_ctor):
                 p_WF_n - p_WF, J_WF_n @ autoDiffToGradientMatrix(qn) - J_WF @ autoDiffToGradientMatrix(q))
         else:
             return p_WF_n - p_WF
-    for i in range(4):
+    for i in range(robot.get_num_contacts()):
         for n in range(N):
             if in_stance[i, n]:
                 # foot should be on the ground (world position z=0)
