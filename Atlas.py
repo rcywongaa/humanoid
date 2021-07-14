@@ -114,10 +114,10 @@ class Atlas(Robot):
     R_FOOT_TOE_L_IDX           = 6
     R_FOOT_TOE_R_IDX           = 7
 
-    L_FOOT_HEEL_IDX = [L_FOOT_HEEL_R_IDX, L_FOOT_HEEL_L_IDX]
-    R_FOOT_HEEL_IDX = [R_FOOT_HEEL_R_IDX, R_FOOT_HEEL_L_IDX]
-    L_FOOT_TOE_IDX = [L_FOOT_TOE_R_IDX, L_FOOT_TOE_L_IDX]
-    R_FOOT_TOE_IDX = [R_FOOT_TOE_R_IDX, R_FOOT_TOE_L_IDX]
+    # L_FOOT_HEEL_IDX = [L_FOOT_HEEL_R_IDX, L_FOOT_HEEL_L_IDX]
+    # R_FOOT_HEEL_IDX = [R_FOOT_HEEL_R_IDX, R_FOOT_HEEL_L_IDX]
+    # L_FOOT_TOE_IDX = [L_FOOT_TOE_R_IDX, L_FOOT_TOE_L_IDX]
+    # R_FOOT_TOE_IDX = [R_FOOT_TOE_R_IDX, R_FOOT_TOE_L_IDX]
 
     def __init__(self, plant):
         package_map = PackageMap()
@@ -161,40 +161,57 @@ class Atlas(Robot):
     def get_stance_schedule(self):
         in_stance = np.zeros((self.get_num_contacts(), self.get_num_timesteps()))
 
-        # https://www.semanticscholar.org/paper/Algorithmic-Foundations-of-Realizing-Multi-Contact-Reher-Hereid/38c1d2cc136415076aa5d5c903202f4491c327bb/figure/2
-        # 0%   Right foot heel strike (left foot heel already off)
-        # 12%  Right foot toe strike
-        # 24%  Left foot toe lift
-        # 36%  Right foot heel lift
-        # 50%  Left foot heel strike
-        # 62%  Left foot toe strike
-        # 74%  Right foot toe lift
-        # 86%  Left foot heel lift
-        # 100% Right foot heel strike
+        '''
+        Algorithmic Foundations of Realizing Multi-Contact Locomotion on the Humanoid Robot DURUS
+        Jake Reher, Ayonga Hereid, Shishir Kolathaya, Christian M. Hubicki, A. Ames
+        https://www.semanticscholar.org/paper/Algorithmic-Foundations-of-Realizing-Multi-Contact-Reher-Hereid/38c1d2cc136415076aa5d5c903202f4491c327bb/figure/2
 
-        # We start at the middle of midstance
-        # equivalent to 30% of gait cycle (immediately after left toe off)
+        0%   Right foot heel strike (left foot heel already off)
+        12%  Right foot toe strike
+        24%  Left foot toe lift
+        36%  Right foot heel lift
+        50%  Left foot heel strike
+        62%  Left foot toe strike
+        74%  Right foot toe lift
+        86%  Left foot heel lift
+        100% Right foot heel strike
+
+        We start at the middle of midstance
+        equivalent to 30% of gait cycle (immediately after left toe off)
+        '''
 
         # Right foot planted
         t = 0
-        in_stance[Atlas.R_FOOT_HEEL_IDX, t:] = 1
-        in_stance[Atlas.R_FOOT_TOE_IDX, t:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, t:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, t:] = 1
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, t:] = 1
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, t:] = 1
 
         # Right foot heel off
+        # Heel should come off at the same time due to the pivot at the toe
         t = 6
-        in_stance[Atlas.R_FOOT_HEEL_IDX, t:] = 0
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, t:] = 0
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, t:] = 0
 
         # Left foot heel strike
+        # Do not require that HEEL_L and HEEL_R strike at the exact same time
         t = 20
-        in_stance[Atlas.L_FOOT_HEEL_IDX, t:] = 1
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, t:] = 1
+        t = 21
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, t:] = 1
 
         # Left foot toe strike
+        # Toe should strike at the same time due to the pivot at the heel
         t = 32
-        in_stance[Atlas.L_FOOT_TOE_IDX, t:] = 1
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, t:] = 1
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, t:] = 1
 
         # Right foot toe off
+        # Do not require that TOE_L and TOE_R strike at the exact same time
         t = 44
-        in_stance[Atlas.R_FOOT_TOE_IDX, t:] = 0
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, t:] = 0
+        t = 45
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, t:] = 0
 
         return in_stance
 
