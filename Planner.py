@@ -24,8 +24,6 @@ from meshcat.servers.zmqserver import start_zmq_server_as_subprocess
 proc, zmq_url, web_url = start_zmq_server_as_subprocess(
     server_args=['--ngrok_http_tunnel'] if 'google.colab' in sys.modules else [])
 
-running_as_notebook = True
-
 # Need this because a==b returns True even if a = AutoDiffXd(1, [1, 2]), b= AutoDiffXd(2, [3, 4])
 # That's the behavior of AutoDiffXd in C++, also.
 def autoDiffArrayEqual(a,b):
@@ -51,12 +49,11 @@ def gait_optimization(robot_ctor):
     PositionView = robot.PositionView()
     VelocityView = robot.VelocityView()
 
-    mu = 1 # rubber on rubber
+    mu = 2 # rubber on rubber
     total_mass = robot.get_total_mass(context)
     gravity = plant.gravity_field().gravity_vector()
     g = 9.81
     
-    nq = 12
     contact_frame = robot.get_contact_frames()
 
     in_stance = robot.get_stance_schedule()
@@ -277,12 +274,13 @@ def gait_optimization(robot_ctor):
 
     # TODO: Set solver parameters (mostly to make the worst case solve times less bad)
     snopt = SnoptSolver().solver_id()
-    prog.SetSolverOption(snopt, 'Iterations Limits', 1e5 if running_as_notebook else 1)
-    prog.SetSolverOption(snopt, 'Major Iterations Limit', 200 if running_as_notebook else 1)
+    prog.SetSolverOption(snopt, 'Iterations Limits', 5e5)
+    prog.SetSolverOption(snopt, 'Major Iterations Limit', 500)
     prog.SetSolverOption(snopt, 'Major Feasibility Tolerance', 5e-6)
     prog.SetSolverOption(snopt, 'Major Optimality Tolerance', 1e-4)
     prog.SetSolverOption(snopt, 'Superbasics limit', 2000)
     prog.SetSolverOption(snopt, 'Linesearch tolerance', 0.9)
+    # prog.SetSolverOption(snopt, 'Scale option', 2)
     prog.SetSolverOption(snopt, 'Print file', 'snopt.out')
 
     # TODO a few more costs/constraints from 

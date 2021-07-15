@@ -197,7 +197,7 @@ class Atlas(Robot):
         # Do not require that HEEL_L and HEEL_R strike at the exact same time
         t = 20
         in_stance[Atlas.L_FOOT_HEEL_L_IDX, t:] = 1
-        t = 21
+        t = t + 2
         in_stance[Atlas.L_FOOT_HEEL_R_IDX, t:] = 1
 
         # Left foot toe strike
@@ -210,7 +210,7 @@ class Atlas(Robot):
         # Do not require that TOE_L and TOE_R strike at the exact same time
         t = 44
         in_stance[Atlas.R_FOOT_TOE_R_IDX, t:] = 0
-        t = 45
+        t = t + 2
         in_stance[Atlas.R_FOOT_TOE_L_IDX, t:] = 0
 
         return in_stance
@@ -240,10 +240,10 @@ class Atlas(Robot):
         https://anatomypubs.onlinelibrary.wiley.com/doi/pdf/10.1002/ar.23551
         Pelvis rotation is around 10 degrees for average human walking speed
         '''
-        return 0.2
+        return 0.25
 
     def min_com_height(self):
-        return 0.7
+        return 0.4
 
     def get_position_cost(self):
         q_cost = self.PositionView()([1]*self.nq)
@@ -253,6 +253,9 @@ class Atlas(Robot):
         q_cost.pelvis_qy = 0
         q_cost.pelvis_qz = 0
         q_cost.pelvis_qw = 0
+        q_cost.back_bkx = 5
+        q_cost.back_bky = 5
+        q_cost.back_bkz = 5
         return q_cost
 
     def get_velocity_cost(self):
@@ -303,8 +306,8 @@ class Atlas(Robot):
         prog.AddLinearEqualityConstraint(q_view.pelvis_y[0] == -q_view.pelvis_y[-1])
         prog.AddLinearEqualityConstraint(q_view.pelvis_z[0] == q_view.pelvis_z[-1])
         # Body orientation must be in the xz plane:
-        prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qx[[0,-1]])
-        prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qz[[0,-1]])
+        # prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qx[[0,-1]])
+        # prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qz[[0,-1]])
 
         # Floating base velocity
         prog.AddLinearEqualityConstraint(v_view.pelvis_vx[0] == v_view.pelvis_vx[-1])
