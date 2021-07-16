@@ -315,6 +315,7 @@ class Atlas(Robot):
         prog.AddLinearEqualityConstraint(v_view.pelvis_vy[0] == -v_view.pelvis_vy[-1])
         prog.AddLinearEqualityConstraint(v_view.pelvis_vz[0] == v_view.pelvis_vz[-1])
 
+        # Avoid criss-cross walking
         prog.AddBoundingBoxConstraint(-np.inf, 0.1, q_view.r_leg_hpx[:])
         prog.AddBoundingBoxConstraint(-0.1, np.inf, q_view.l_leg_hpx[:])
 
