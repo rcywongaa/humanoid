@@ -180,6 +180,7 @@ class Atlas(Robot):
         equivalent to 30% of gait cycle (immediately after left toe off)
         '''
 
+        CONTACT_DELAY = 4
         # Right foot planted
         t = 0
         in_stance[Atlas.R_FOOT_HEEL_L_IDX, t:] = 1
@@ -197,7 +198,7 @@ class Atlas(Robot):
         # Do not require that HEEL_L and HEEL_R strike at the exact same time
         t = 20
         in_stance[Atlas.L_FOOT_HEEL_L_IDX, t:] = 1
-        t = t + 2
+        t = t + CONTACT_DELAY
         in_stance[Atlas.L_FOOT_HEEL_R_IDX, t:] = 1
 
         # Left foot toe strike
@@ -210,7 +211,7 @@ class Atlas(Robot):
         # Do not require that TOE_L and TOE_R strike at the exact same time
         t = 44
         in_stance[Atlas.R_FOOT_TOE_R_IDX, t:] = 0
-        t = t + 2
+        t = t + CONTACT_DELAY
         in_stance[Atlas.R_FOOT_TOE_L_IDX, t:] = 0
 
         return in_stance
@@ -316,6 +317,7 @@ class Atlas(Robot):
 
         prog.AddBoundingBoxConstraint(-np.inf, 0.1, q_view.r_leg_hpx[:])
         prog.AddBoundingBoxConstraint(-0.1, np.inf, q_view.l_leg_hpx[:])
+
     def HalfStrideToFullStride(self, a):
         b = self.PositionView()(np.copy(a))
 
