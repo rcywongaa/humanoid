@@ -40,21 +40,20 @@ sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
    ```
 1. Run `python3 HumanoidController.py`
 
-### HumanoidController
+### Controller (Broken)
 #### Disturbance Rejection (Sped up 40x)
 - Formulate-Solve Time: 0.04s
 ![Disturbance](resources/disturbance.gif)
 
-### HumanoidPlanner (WIP)
-#### Problems
-- Both complementarity version and contact sequence version fails
-- Test with
+### Planner (WIP)
+- Takes around 40mins to solve
+- Not solved to optimum (some constraints may be violated / may not be physically feasible)
   ```
-  python3 test_HumanoidPlanner.py TestHumanoidPlanner.test_contact_sequence_constraints
+  SNOPTA EXIT  80 -- insufficient storage allocated
+  SNOPTA INFO  83 -- not enough integer storage
   ```
-  ```
-  python3 test_HumanoidPlanner.py TestHumanoidPlanner.test_complementarity_constraints
-  ```
+- Decapitated and dismembered to improve solve time...
+![Walking](resources/walking.gif)
 
 ## Troubleshooting
 

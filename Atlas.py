@@ -2,18 +2,15 @@
 
 import numpy as np
 
-from pydrake.common import FindResourceOrThrow
-from pydrake.math import RigidTransform
-from pydrake.multibody.parsing import Parser
-from pydrake.systems.analysis import Simulator
-from pydrake.all import MultibodyPlant
-from pydrake.systems.framework import DiagramBuilder
-from pydrake.all import ConnectDrakeVisualizer, SceneGraph, HalfSpace, Box, ConnectContactResultsToDrakeVisualizer, Simulator
-from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph, CoulombFriction
-from pydrake.systems.analysis import Simulator
-from pydrake.math import RollPitchYaw
+from pydrake.all import (
+        RigidTransform, Parser, PackageMap
+)
+
 from typing import NamedTuple
 import time
+import pdb
+
+from Robot import Robot
 
 '''
 Floating base is attached at the pelvis link
@@ -22,12 +19,7 @@ For generalized velocities, first 6 values are 3 rotational velocities + 3 xd, y
 Hence generalized velocities are not strictly the derivative of generalized positions
 '''
 
-class Atlas():
-    # Atlas is 175kg according to drake/share/drake/examples/atlas/urdf/atlas_convex_hull.urdf
-    M = 175.0
-    g = -9.81
-    PELVIS_HEIGHT = 0.93845
-
+class Atlas(Robot):
     class JointLimit(NamedTuple):
         effort: float
         lower: float
@@ -91,22 +83,295 @@ class Atlas():
             ]).T
     }
 
-    FOOT_OFFSET = np.array([0.0, 0.0, -0.07645])
-    HEEL_OFFSET = np.array([-0.0876, 0.0, -0.07645])
-    TOE_OFFSET = np.array([0.1728, 0.0, -0.07645])
+    PELVIS_HEIGHT = 0.93845
 
-    NUM_CONTACTS = sum([contacts.shape[1] for contacts in CONTACTS_PER_FRAME.values()])
-    FLOATING_BASE_DOF = 6
-    FLOATING_BASE_QUAT_DOF = 7 # Start index of actuated joints in generalized positions
     NUM_ACTUATED_DOF = 30
-    TOTAL_DOF = FLOATING_BASE_DOF + NUM_ACTUATED_DOF
-    POS_QW_IDX = 0
-    POS_QX_IDX = 1
-    POS_QY_IDX = 2
-    POS_QZ_IDX = 3
-    POS_X_IDX = 4
-    POS_Y_IDX = 5
-    POS_Z_IDX = 6
+    TOTAL_DOF = 37
+
+    # L_FOOT_HEEL_L_IDX          = 0
+    # L_FOOT_HEEL_R_IDX          = 1
+    # L_FOOT_TOE_L_IDX           = 2
+    # L_FOOT_TOE_R_IDX           = 3
+    # L_FOOT_MIDFOOT_FRONT_L_IDX = 4
+    # L_FOOT_MIDFOOT_FRONT_R_IDX = 5
+    # L_FOOT_MIDFOOT_REAR_L_IDX  = 6
+    # L_FOOT_MIDFOOT_REAR_R_IDX  = 7
+    # R_FOOT_HEEL_L_IDX          = 8
+    # R_FOOT_HEEL_R_IDX          = 9
+    # R_FOOT_TOE_L_IDX           = 10
+    # R_FOOT_TOE_R_IDX           = 11
+    # R_FOOT_MIDFOOT_FRONT_L_IDX = 12
+    # R_FOOT_MIDFOOT_FRONT_R_IDX = 13
+    # R_FOOT_MIDFOOT_REAR_L_IDX  = 14
+    # R_FOOT_MIDFOOT_REAR_R_IDX  = 15
+
+    L_FOOT_HEEL_L_IDX          = 0
+    L_FOOT_HEEL_R_IDX          = 1
+    L_FOOT_TOE_L_IDX           = 2
+    L_FOOT_TOE_R_IDX           = 3
+    R_FOOT_HEEL_L_IDX          = 4
+    R_FOOT_HEEL_R_IDX          = 5
+    R_FOOT_TOE_L_IDX           = 6
+    R_FOOT_TOE_R_IDX           = 7
+
+    # L_FOOT_HEEL_IDX = [L_FOOT_HEEL_R_IDX, L_FOOT_HEEL_L_IDX]
+    # R_FOOT_HEEL_IDX = [R_FOOT_HEEL_R_IDX, R_FOOT_HEEL_L_IDX]
+    # L_FOOT_TOE_IDX = [L_FOOT_TOE_R_IDX, L_FOOT_TOE_L_IDX]
+    # R_FOOT_TOE_IDX = [R_FOOT_TOE_R_IDX, R_FOOT_TOE_L_IDX]
+
+    def __init__(self, plant):
+        package_map = PackageMap()
+        package_map.PopulateFromFolder("robots/atlas/")
+        super().__init__(plant, "robots/atlas/urdf/atlas_legs_only.urdf", package_map)
+
+    def get_contact_frames(self):
+        return [
+            self.plant.GetFrameByName("l_foot_heel_l"),
+            self.plant.GetFrameByName("l_foot_heel_r"),
+            self.plant.GetFrameByName("l_foot_toe_l"),
+            self.plant.GetFrameByName("l_foot_toe_r"),
+            # self.plant.GetFrameByName("l_foot_midfoot_front_l"),
+            # self.plant.GetFrameByName("l_foot_midfoot_front_r"),
+            # self.plant.GetFrameByName("l_foot_midfoot_rear_l"),
+            # self.plant.GetFrameByName("l_foot_midfoot_rear_r"),
+            self.plant.GetFrameByName("r_foot_heel_l"),
+            self.plant.GetFrameByName("r_foot_heel_r"),
+            self.plant.GetFrameByName("r_foot_toe_l"),
+            self.plant.GetFrameByName("r_foot_toe_r"),
+            # self.plant.GetFrameByName("r_foot_midfoot_front_l"),
+            # self.plant.GetFrameByName("r_foot_midfoot_front_r"),
+            # self.plant.GetFrameByName("r_foot_midfoot_rear_l"),
+            # self.plant.GetFrameByName("r_foot_midfoot_rear_r")
+        ]
+
+    def set_home(self, plant, context):
+        plant.SetFreeBodyPose(context, plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.856+0.07645]))
+        # Add a slight knee bend to avoid locking legs
+        hip_angle = -0.2
+        knee_angle = 0.4
+        ankle_angle = -0.2
+        plant.GetJointByName("l_leg_hpy").set_angle(context, hip_angle)
+        plant.GetJointByName("r_leg_hpy").set_angle(context, hip_angle)
+        plant.GetJointByName("l_leg_kny").set_angle(context, knee_angle)
+        plant.GetJointByName("r_leg_kny").set_angle(context, knee_angle)
+        plant.GetJointByName("l_leg_aky").set_angle(context, ankle_angle)
+        plant.GetJointByName("r_leg_aky").set_angle(context, ankle_angle)
+        plant.GetJointByName("back_bky").set_angle(context, 0.05)
+
+    def get_stance_schedule(self):
+        in_stance = np.zeros((self.get_num_contacts(), self.get_num_timesteps()))
+
+        '''
+        Algorithmic Foundations of Realizing Multi-Contact Locomotion on the Humanoid Robot DURUS
+        Jake Reher, Ayonga Hereid, Shishir Kolathaya, Christian M. Hubicki, A. Ames
+        https://www.semanticscholar.org/paper/Algorithmic-Foundations-of-Realizing-Multi-Contact-Reher-Hereid/38c1d2cc136415076aa5d5c903202f4491c327bb/figure/2
+
+        0%   Right foot heel strike (left foot heel already off)
+        12%  Right foot toe strike
+        24%  Left foot toe lift
+        36%  Right foot heel lift
+        50%  Left foot heel strike
+        62%  Left foot toe strike
+        74%  Right foot toe lift
+        86%  Left foot heel lift
+        100% Right foot heel strike
+
+        We start at the middle of midstance
+        equivalent to 30% of gait cycle (immediately after left toe off)
+        '''
+
+        CONTACT_DELAY = 4
+        # Right foot planted
+        t = 0
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, t:] = 1
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, t:] = 1
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, t:] = 1
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, t:] = 1
+
+        # Right foot heel off
+        # Heel should come off at the same time due to the pivot at the toe
+        t = 6
+        in_stance[Atlas.R_FOOT_HEEL_R_IDX, t:] = 0
+        in_stance[Atlas.R_FOOT_HEEL_L_IDX, t:] = 0
+
+        # Left foot heel strike
+        # Do not require that HEEL_L and HEEL_R strike at the exact same time
+        t = 20
+        in_stance[Atlas.L_FOOT_HEEL_L_IDX, t:] = 1
+        t = t + CONTACT_DELAY
+        in_stance[Atlas.L_FOOT_HEEL_R_IDX, t:] = 1
+
+        # Left foot toe strike
+        # Toe should strike at the same time due to the pivot at the heel
+        t = 32
+        in_stance[Atlas.L_FOOT_TOE_L_IDX, t:] = 1
+        in_stance[Atlas.L_FOOT_TOE_R_IDX, t:] = 1
+
+        # Right foot toe off
+        # Do not require that TOE_L and TOE_R strike at the exact same time
+        t = 44
+        in_stance[Atlas.R_FOOT_TOE_R_IDX, t:] = 0
+        t = t + CONTACT_DELAY
+        in_stance[Atlas.R_FOOT_TOE_L_IDX, t:] = 0
+
+        return in_stance
+
+    def get_num_timesteps(self):
+        return 51
+
+    def get_laterally_symmetric(self):
+        return True
+
+    def get_check_self_collision(self):
+        return False
+
+    def get_stride_length(self):
+        return 0.7
+
+    def get_speed(self):
+        return 1.4
+
+    def get_body_name(self):
+        return "pelvis"
+
+    def max_body_rotation(self):
+        '''
+        Pelvic Rotation Effect on Human Stride Length: Releasing the Constraint of Obstetric Selection
+        KATHERINE K. WHITCOME, E. ELIZABETH MILLER, AND JESSICA L. BURNS
+        https://anatomypubs.onlinelibrary.wiley.com/doi/pdf/10.1002/ar.23551
+        Pelvis rotation is around 10 degrees for average human walking speed
+        '''
+        return 0.25
+
+    def min_com_height(self):
+        return 0.4
+
+    def get_position_cost(self):
+        q_cost = self.PositionView()([1]*self.nq)
+        q_cost.pelvis_x = 0
+        q_cost.pelvis_y = 0
+        q_cost.pelvis_qx = 0
+        q_cost.pelvis_qy = 0
+        q_cost.pelvis_qz = 0
+        q_cost.pelvis_qw = 0
+        q_cost.back_bkx = 5
+        q_cost.back_bky = 5
+        q_cost.back_bkz = 5
+        return q_cost
+
+    def get_velocity_cost(self):
+        v_cost = self.VelocityView()([1]*self.nv)
+        v_cost.pelvis_vx = 0
+        v_cost.pelvis_wx = 0
+        v_cost.pelvis_wy = 0
+        v_cost.pelvis_wz = 0
+        return v_cost
+
+    def get_periodic_view(self):
+        q_selector = self.PositionView()([True]*self.nq)
+        q_selector.pelvis_x = False
+        return q_selector
+
+    def increment_periodic_view(self, view, increment):
+        view.pelvis_x += increment
+
+    def add_periodic_constraints(self, prog, q_view, v_view):
+        # Joints
+        def AddAntiSymmetricPair(a, b):
+            prog.AddLinearEqualityConstraint(a[0] == -b[-1])
+            prog.AddLinearEqualityConstraint(a[-1] == -b[0])
+        def AddSymmetricPair(a, b):
+            prog.AddLinearEqualityConstraint(a[0] == b[-1])
+            prog.AddLinearEqualityConstraint(a[-1] == b[0])
+
+        # AddAntiSymmetricPair(q_view.l_arm_elx, q_view.r_arm_elx)
+        # AddSymmetricPair(q_view.l_arm_ely, q_view.r_arm_ely)
+        # AddAntiSymmetricPair(q_view.l_arm_shx, q_view.r_arm_shx)
+        # AddAntiSymmetricPair(q_view.l_arm_shz, q_view.r_arm_shz)
+        # AddAntiSymmetricPair(q_view.l_arm_mwx, q_view.r_arm_mwx)
+        # AddSymmetricPair(q_view.l_arm_uwy, q_view.r_arm_uwy)
+        # AddSymmetricPair(q_view.l_arm_lwy, q_view.r_arm_lwy)
+
+        AddAntiSymmetricPair(q_view.l_leg_akx, q_view.r_leg_akx)
+        AddSymmetricPair(q_view.l_leg_aky, q_view.r_leg_aky)
+        AddAntiSymmetricPair(q_view.l_leg_hpx, q_view.r_leg_hpx)
+        AddSymmetricPair(q_view.l_leg_hpy, q_view.r_leg_hpy)
+        AddAntiSymmetricPair(q_view.l_leg_hpz, q_view.r_leg_hpz)
+        AddSymmetricPair(q_view.l_leg_kny, q_view.r_leg_kny)
+
+        prog.AddLinearEqualityConstraint(q_view.back_bkx[0] == -q_view.back_bkx[-1])
+        prog.AddLinearEqualityConstraint(q_view.back_bky[0] == q_view.back_bky[-1])
+        prog.AddLinearEqualityConstraint(q_view.back_bkz[0] == -q_view.back_bkz[-1])
+        # prog.AddLinearEqualityConstraint(q_view.neck_ay[0] == q_view.neck_ay[-1])
+
+        prog.AddLinearEqualityConstraint(q_view.pelvis_y[0] == -q_view.pelvis_y[-1])
+        prog.AddLinearEqualityConstraint(q_view.pelvis_z[0] == q_view.pelvis_z[-1])
+        # Body orientation must be in the xz plane:
+        # prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qx[[0,-1]])
+        # prog.AddBoundingBoxConstraint(0, 0, q_view.pelvis_qz[[0,-1]])
+
+        # Floating base velocity
+        prog.AddLinearEqualityConstraint(v_view.pelvis_vx[0] == v_view.pelvis_vx[-1])
+        prog.AddLinearEqualityConstraint(v_view.pelvis_vy[0] == -v_view.pelvis_vy[-1])
+        prog.AddLinearEqualityConstraint(v_view.pelvis_vz[0] == v_view.pelvis_vz[-1])
+
+        # Avoid criss-cross walking
+        prog.AddBoundingBoxConstraint(-np.inf, 0.1, q_view.r_leg_hpx[:])
+        prog.AddBoundingBoxConstraint(-0.1, np.inf, q_view.l_leg_hpx[:])
+
+    def HalfStrideToFullStride(self, a):
+        b = self.PositionView()(np.copy(a))
+
+        b.pelvis_y = -a.pelvis_y
+        b.pelvis_qx = -a.pelvis_qx
+        b.pelvis_qz = -a.pelvis_qz
+
+        # b.l_arm_elx = -a.r_arm_elx
+        # b.r_arm_elx = -a.l_arm_elx
+
+        # b.l_arm_ely = a.r_arm_ely
+        # b.r_arm_ely = a.l_arm_ely
+
+        # b.l_arm_shx = -a.r_arm_shx
+        # b.r_arm_shx = -a.l_arm_shx
+
+        # b.l_arm_shz = -a.r_arm_shz
+        # b.r_arm_shz = -a.l_arm_shz
+
+        # b.l_arm_mwx = -a.r_arm_mwx
+        # b.r_arm_mwx = -a.l_arm_mwx
+
+        # b.l_arm_uwy = a.r_arm_uwy
+        # b.r_arm_uwy = a.l_arm_uwy
+
+        # b.l_arm_lwy = a.r_arm_lwy
+        # b.r_arm_lwy = a.l_arm_lwy
+
+        b.l_leg_akx = -a.r_leg_akx
+        b.r_leg_akx = -a.l_leg_akx
+
+        b.l_leg_aky = a.r_leg_aky
+        b.r_leg_aky = a.l_leg_aky
+
+        b.l_leg_hpx = -a.r_leg_hpx
+        b.r_leg_hpx = -a.l_leg_hpx
+
+        b.l_leg_hpy = a.r_leg_hpy
+        b.r_leg_hpy = a.l_leg_hpy
+
+        b.l_leg_hpz = -a.r_leg_hpz
+        b.r_leg_hpz = -a.l_leg_hpz
+
+        b.l_leg_kny = a.r_leg_kny
+        b.r_leg_kny = a.l_leg_kny
+
+        b.back_bkx = -a.back_bkx
+        b.back_bky = a.back_bky
+        b.back_bkz = -a.back_bkz
+        # b.neck_ay = a.neck_ay
+
+        return b
+
 
 def getAllJointIndicesInGeneralizedPositions(plant):
     for joint_limit in Atlas.JOINT_LIMITS.items():
@@ -142,77 +407,3 @@ def getJointValues(plant, joint_names, context):
 def setJointValues(plant, joint_values, context):
     for i in range(len(joint_values)):
         plant.GetJointByIndex(i).set_angle(context, joint_values[i])
-
-# plant is modified in place
-def load_atlas(plant, add_ground=False):
-    atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_minimal_contact.urdf")
-    # atlas_file = FindResourceOrThrow("drake/examples/atlas/urdf/atlas_convex_hull.urdf")
-    atlas = Parser(plant).AddModelFromFile(atlas_file)
-
-    if add_ground:
-        static_friction = 1.0
-        green = np.array([0.5, 1.0, 0.5, 1.0])
-
-        # plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
-                # "GroundVisuaGeometry", green)
-
-        ground_friction = CoulombFriction(1.0, 1.0)
-        plant.RegisterCollisionGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
-                "GroundCollisionGeometry", ground_friction)
-
-    plant.Finalize()
-    plant.set_penetration_allowance(1.0e-3)
-    plant.set_stiction_tolerance(1.0e-3)
-
-def set_atlas_initial_pose(plant, plant_context):
-    pelvis = plant.GetBodyByName("pelvis")
-    X_WP = RigidTransform(RollPitchYaw(0.0, 0.0, 0.0), np.array([0.0, 0.0, 0.94]))
-    plant.SetFreeBodyPose(plant_context, pelvis, X_WP)
-
-def set_null_input(plant, plant_context):
-    tau = np.zeros(plant.num_actuated_dofs())
-    plant.get_actuation_input_port().FixValue(plant_context, tau)
-
-def visualize(q, dt=None):
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(0.001))
-    load_atlas(plant, add_ground=True)
-    plant_context = plant.CreateDefaultContext()
-    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=plant)
-    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
-    diagram = builder.Build()
-
-    if len(q.shape) == 1:
-        q = np.reshape(q, (1, -1))
-
-    for i in range(q.shape[0]):
-        print(f"knot point: {i}")
-        diagram_context = diagram.CreateDefaultContext()
-        plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
-        set_null_input(plant, plant_context)
-
-        plant.SetPositions(plant_context, q[i])
-        simulator = Simulator(diagram, diagram_context)
-        simulator.set_target_realtime_rate(0.0)
-        simulator.AdvanceTo(0.0001)
-        if not dt is None:
-            time.sleep(5/(np.sum(dt))*dt[i])
-        else:
-            time.sleep(0.5)
-
-if __name__ == "__main__":
-    builder = DiagramBuilder()
-    plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(1.0e-3))
-    load_atlas(plant, add_ground=True)
-    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
-    diagram = builder.Build()
-
-    diagram_context = diagram.CreateDefaultContext()
-    plant_context = diagram.GetMutableSubsystemContext(plant, diagram_context)
-
-    set_atlas_initial_pose(plant, plant_context)
-    set_null_input(plant, plant_context)
-
-    simulator = Simulator(diagram, diagram_context)
-    simulator.set_target_realtime_rate(0.2)
-    simulator.AdvanceTo(2.0)
