@@ -9,43 +9,22 @@
    - An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion (Scott Kuindersma, Frank Permenter, and Russ Tedrake)
    - Roughly equivalent to [`InstantaneousQPController`](https://github.com/RobotLocomotion/drake/blob/last_sha_with_original_matlab/drake/systems/controllers/InstantaneousQPController.cpp)
 
-## Setup
-
-### Install drake
-<https://drake.mit.edu/python_bindings.html#python-bindings-binary>
-
-### Build from source
-#### Setup
-```
-cd setup/ubuntu
-sudo ./install_prereqs.sh
-```
-
-#### Build
-```
-mkdir build && cd build
-cmake ..
-make
-```
-
-#### Install
-```
-sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
-```
-
-## Run
+## Controller (Broken)
+### Disturbance Rejection (Sped up 40x)
 1. Launch `drake-visualizer`
    ```
    ./drake-visualizer
    ```
 1. Run `python3 HumanoidController.py`
 
-### Controller (Broken)
-#### Disturbance Rejection (Sped up 40x)
 - Formulate-Solve Time: 0.04s
+
 ![Disturbance](resources/disturbance.gif)
 
-### Planner (WIP)
+## Planner (WIP)
+```
+python3 Planner.py
+```
 - Takes around 40mins to solve
 - Not solved to optimum (some constraints may be violated / may not be physically feasible)
   ```
@@ -53,6 +32,7 @@ sudo ln -s /opt/drake <PATH_TO_DRAKE>/build/install
   SNOPTA INFO  83 -- not enough integer storage
   ```
 - Decapitated and dismembered to improve solve time...
+
 ![Walking](resources/walking.gif)
 
 ## Troubleshooting
