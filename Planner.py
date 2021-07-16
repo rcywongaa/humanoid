@@ -49,7 +49,7 @@ def gait_optimization(robot_ctor):
     PositionView = robot.PositionView()
     VelocityView = robot.VelocityView()
 
-    mu = 2 # rubber on rubber
+    mu = 1 # rubber on rubber
     total_mass = robot.get_total_mass(context)
     gravity = plant.gravity_field().gravity_vector()
     g = 9.81
