@@ -8,27 +8,27 @@ by Scott Kuindersma, Frank Permenter, and Russ Tedrake
 Other references:
 [1]: Optimization-based Locomotion Planning, Estimation, and Control Design for the Atlas Humanoid Robot
 by Scott Kuindersma, Robin Deits, Maurice Fallon, Andrés Valenzuela, Hongkai Dai, Frank Permenter, Twan Koolen, Pat Marion, Russ Tedrake
+
 TODO:
-Convert to time-varying y_desired and z_com
+- Convert to time-varying y_desired and z_com
+- Proper use of Context to improve performance
 '''
 
-from Atlas import load_atlas, set_atlas_initial_pose
 from Atlas import getJointLimitsSortedByActuator, getActuatorIndex, getJointValues, getJointIndexInGeneralizedVelocities
 from Atlas import Atlas
 import numpy as np
 import random
-from pydrake.systems.framework import DiagramBuilder
-from pydrake.solvers.mathematicalprogram import MathematicalProgram, Solve
-from pydrake.systems.controllers import LinearQuadraticRegulator
-from pydrake.multibody.plant import MultibodyPlant, AddMultibodyPlantSceneGraph
-from pydrake.multibody.tree import JacobianWrtVariable
-from pydrake.geometry import ConnectDrakeVisualizer, SceneGraph
-from pydrake.multibody.plant import ConnectContactResultsToDrakeVisualizer
-from pydrake.systems.analysis import Simulator
-from pydrake.systems.framework import BasicVector, LeafSystem
-from pydrake.common.eigen_geometry import Quaternion
-from pydrake.all import eq, le, ge
-from pydrake.all import ExternallyAppliedSpatialForce, SpatialForce, Value, List
+from pydrake.all import (
+        DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, SceneGraph,
+        MathematicalProgram, Solve, eq, le, ge, SnoptSolver,
+        LinearQuadraticRegulator,
+        JacobianWrtVariable,
+        BasicVector, LeafSystem,
+        Quaternion,
+        ExternallyAppliedSpatialForce, SpatialForce, Value, List,
+        Simulator, DrakeVisualizer
+)
+from functools import partial
 
 import time
 import pdb
@@ -37,12 +37,14 @@ z_com = 1.220 # COM after 0.05s
 zmp_state_size = 2
 mbp_time_step = 1.0e-3
 
-mu = 1.0 # Coefficient of friction, same as in load_atlas.py
+mu = 1.0 # Coefficient of friction
 eta_min = -0.2
 eta_max = 0.2
 
 N_d = 4 # friction cone approximated as a i-pyramid
 N_f = 3 # contact force dimension
+
+g = -9.81
 
 def normalize(q):
     return q / np.linalg.norm(q)
@@ -53,16 +55,17 @@ class HumanoidController(LeafSystem):
         toggles between COM/COP stabilization and whole body stabilization
         by changing the formulation of V
     '''
-    def __init__(self, plant, contacts_per_frame, is_wbc=False):
+    def __init__(self, robot_ctor, is_wbc=False):
         LeafSystem.__init__(self)
-        self.plant = plant
-        self.contacts_per_frame = contacts_per_frame
+        self.plant = MultibodyPlant(mbp_time_step)
+        self.robot = robot_ctor(self.plant)
+        self.contacts_per_frame = self.robot.CONTACTS_PER_FRAME
         self.is_wbc = is_wbc
         self.upright_context = self.plant.CreateDefaultContext()
         self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.num_positions() + self.plant.num_velocities())).get_index()
-        self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(Atlas.NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
+        self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(self.robot.NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
 
         if self.is_wbc:
             com_dim = 3
@@ -111,7 +114,7 @@ class HumanoidController(LeafSystem):
 
             ''' Eq(4) '''
             C_2 = np.hstack([np.identity(2), np.zeros((2,2))]) # C in Eq(2)
-            D = -z_com / Atlas.g * np.identity(zmp_state_size)
+            D = -z_com / g * np.identity(zmp_state_size)
             Q = 1.0 * np.identity(zmp_state_size)
 
             ''' Eq(6) '''
@@ -215,7 +218,7 @@ class HumanoidController(LeafSystem):
         for frame, active_contacts in active_contacts_per_frame.items():
             if active_contacts.size:
                 num_active_contacts = active_contacts.shape[1]
-                J_foot = np.zeros((N_f*num_active_contacts, Atlas.TOTAL_DOF))
+                J_foot = np.zeros((N_f*num_active_contacts, self.robot.nv))
                 # TODO: Can this be simplified?
                 for i in range(num_active_contacts):
                     J_foot[N_f*i:N_f*(i+1),:] = self.plant.CalcJacobianSpatialVelocity(
@@ -223,7 +226,7 @@ class HumanoidController(LeafSystem):
                         active_contacts[:,i], self.plant.world_frame(), self.plant.world_frame())[3:]
                 J_foots.append(J_foot)
         J = np.vstack(J_foots)
-        assert(J.shape == (N_c*N_f, Atlas.TOTAL_DOF))
+        assert(J.shape == (N_c*N_f, self.robot.nv))
 
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
         self.eta = eta
@@ -238,7 +241,7 @@ class HumanoidController(LeafSystem):
         epsilon = 1.0e-8
         K_p = 10.0
         K_d = 4.0
-        frame_weights = np.ones((Atlas.TOTAL_DOF))
+        frame_weights = np.ones((self.robot.nv))
 
         q = self.plant.GetPositions(plant_context)
         qd = self.plant.GetVelocities(plant_context)
@@ -249,8 +252,7 @@ class HumanoidController(LeafSystem):
         ## FIXME: Not sure if it's a good idea to ignore the x, y, z position of pelvis
         # ignored_pose_indices = {3, 4, 5} # Ignore x position, y position
         ignored_pose_indices = {} # Ignore x position, y position
-        relevant_pose_indices = list(set(range(Atlas.TOTAL_DOF)) - set(ignored_pose_indices))
-        self.relevant_pose_indices = relevant_pose_indices
+        relevant_pose_indices = list(set(range(self.robot.nv)) - set(ignored_pose_indices))
         qdd_ref = K_p*q_err + K_d*(v_des - qd) + vd_des # Eq(27) of [1]
         qdd_err = qdd_ref - qdd
         qdd_err = qdd_err*frame_weights
@@ -304,7 +306,7 @@ class HumanoidController(LeafSystem):
         prog.AddLinearConstraint(le(eta, eta_max))
 
         ''' Enforce x as com '''
-        com = self.plant.CalcCenterOfMassPosition(plant_context)
+        com = self.plant.CalcCenterOfMassPositionInWorld(plant_context)
         com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
                 plant_context, JacobianWrtVariable.kV,
                 self.plant.world_frame(), self.plant.world_frame()).dot(qd)
@@ -391,10 +393,10 @@ class HumanoidController(LeafSystem):
         # print(f"comdd z: {comdd[2]}")
         # self.plant.EvalBodyPoseInWorld(current_plant_context, self.plant.GetBodyByName("pelvis")).rotation().ToQuaternion().xyz()
         # print(f"pelvis angular position = {Quaternion(normalize(q_v[0:4])).xyz()}")
-        # print(f"pelvis angular velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF:Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3]}")
+        # print(f"pelvis angular velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3]}")
         # print(f"pelvis angular acceleration = {qdd_sol[0:3]}")
         # print(f"pelvis translational position = {q_v[4:7]}")
-        # print(f"pelvis translational velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3 : Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 6]}")
+        # print(f"pelvis translational velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3 : FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 6]}")
         # print(f"pelvis translational acceleration = {qdd_sol[3:6]}")
         # print(f"beta = {beta_sol}")
         # print(f"lambda z = {lambd_sol[2::3]}")
@@ -479,12 +481,10 @@ class ForceDisturber(LeafSystem):
 def main():
     builder = DiagramBuilder()
     sim_plant, scene_graph = AddMultibodyPlantSceneGraph(builder, MultibodyPlant(mbp_time_step))
-    load_atlas(sim_plant, add_ground=True)
+    sim_robot = Atlas(sim_plant, add_ground=True)
     sim_plant_context = sim_plant.CreateDefaultContext()
 
-    controller_plant = MultibodyPlant(mbp_time_step)
-    load_atlas(controller_plant)
-    controller = builder.AddSystem(HumanoidController(controller_plant, Atlas.CONTACTS_PER_FRAME, is_wbc=False))
+    controller = builder.AddSystem(HumanoidController(partial(Atlas, add_ground=False, simplified=False), is_wbc=False))
     controller.set_name("HumanoidController")
 
     disturber = builder.AddSystem(ForceDisturber(
@@ -494,12 +494,11 @@ def main():
     builder.Connect(sim_plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), sim_plant.get_actuation_input_port())
 
-    ConnectContactResultsToDrakeVisualizer(builder=builder, plant=sim_plant)
-    ConnectDrakeVisualizer(builder=builder, scene_graph=scene_graph)
+    DrakeVisualizer.AddToBuilder(builder=builder, scene_graph=scene_graph)
     diagram = builder.Build()
     diagram_context = diagram.CreateDefaultContext()
     sim_plant_context = diagram.GetMutableSubsystemContext(sim_plant, diagram_context)
-    set_atlas_initial_pose(sim_plant, sim_plant_context)
+    sim_robot.set_home(sim_plant, sim_plant_context)
     controller_context = diagram.GetMutableSubsystemContext(controller, diagram_context)
     controller.GetInputPort("y_des").FixValue(controller_context, np.array([0.1, 0.0]))
 

@@ -3,7 +3,8 @@
 import numpy as np
 
 from pydrake.all import (
-        RigidTransform, Parser, PackageMap
+        RigidTransform, Parser, PackageMap,
+        HalfSpace, CoulombFriction
 )
 
 from typing import NamedTuple
@@ -86,7 +87,6 @@ class Atlas(Robot):
     PELVIS_HEIGHT = 0.93845
 
     NUM_ACTUATED_DOF = 30
-    TOTAL_DOF = 37
 
     # L_FOOT_HEEL_L_IDX          = 0
     # L_FOOT_HEEL_R_IDX          = 1
@@ -119,10 +119,27 @@ class Atlas(Robot):
     # L_FOOT_TOE_IDX = [L_FOOT_TOE_R_IDX, L_FOOT_TOE_L_IDX]
     # R_FOOT_TOE_IDX = [R_FOOT_TOE_R_IDX, R_FOOT_TOE_L_IDX]
 
-    def __init__(self, plant):
+    def __init__(self, plant, simplified=False, add_ground=False):
         package_map = PackageMap()
         package_map.PopulateFromFolder("robots/atlas/")
-        super().__init__(plant, "robots/atlas/urdf/atlas_legs_only.urdf", package_map)
+
+        if add_ground:
+            green = np.array([0.5, 1.0, 0.5, 1.0])
+
+            plant.RegisterVisualGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
+                    "GroundVisuaGeometry", green)
+
+            ground_friction = CoulombFriction(1.0, 1.0)
+            plant.RegisterCollisionGeometry(plant.world_body(), RigidTransform(), HalfSpace(),
+                    "GroundCollisionGeometry", ground_friction)
+            plant.set_penetration_allowance(1.0e-3)
+            plant.set_stiction_tolerance(1.0e-3)
+
+        self.simplified = simplified
+        if self.simplified:
+            super().__init__(plant, "robots/atlas/urdf/atlas_legs_only.urdf", package_map)
+        else:
+            super().__init__(plant, "robots/atlas/urdf/atlas_minimal_contact.urdf", package_map)
 
     def get_contact_frames(self):
         return [
@@ -284,13 +301,16 @@ class Atlas(Robot):
             prog.AddLinearEqualityConstraint(a[0] == b[-1])
             prog.AddLinearEqualityConstraint(a[-1] == b[0])
 
-        # AddAntiSymmetricPair(q_view.l_arm_elx, q_view.r_arm_elx)
-        # AddSymmetricPair(q_view.l_arm_ely, q_view.r_arm_ely)
-        # AddAntiSymmetricPair(q_view.l_arm_shx, q_view.r_arm_shx)
-        # AddAntiSymmetricPair(q_view.l_arm_shz, q_view.r_arm_shz)
-        # AddAntiSymmetricPair(q_view.l_arm_mwx, q_view.r_arm_mwx)
-        # AddSymmetricPair(q_view.l_arm_uwy, q_view.r_arm_uwy)
-        # AddSymmetricPair(q_view.l_arm_lwy, q_view.r_arm_lwy)
+        if not self.simplified:
+            AddAntiSymmetricPair(q_view.l_arm_elx, q_view.r_arm_elx)
+            AddSymmetricPair(q_view.l_arm_ely, q_view.r_arm_ely)
+            AddAntiSymmetricPair(q_view.l_arm_shx, q_view.r_arm_shx)
+            AddAntiSymmetricPair(q_view.l_arm_shz, q_view.r_arm_shz)
+            AddAntiSymmetricPair(q_view.l_arm_mwx, q_view.r_arm_mwx)
+            AddSymmetricPair(q_view.l_arm_uwy, q_view.r_arm_uwy)
+            AddSymmetricPair(q_view.l_arm_lwy, q_view.r_arm_lwy)
+
+            prog.AddLinearEqualityConstraint(q_view.neck_ay[0] == q_view.neck_ay[-1])
 
         AddAntiSymmetricPair(q_view.l_leg_akx, q_view.r_leg_akx)
         AddSymmetricPair(q_view.l_leg_aky, q_view.r_leg_aky)
@@ -302,7 +322,6 @@ class Atlas(Robot):
         prog.AddLinearEqualityConstraint(q_view.back_bkx[0] == -q_view.back_bkx[-1])
         prog.AddLinearEqualityConstraint(q_view.back_bky[0] == q_view.back_bky[-1])
         prog.AddLinearEqualityConstraint(q_view.back_bkz[0] == -q_view.back_bkz[-1])
-        # prog.AddLinearEqualityConstraint(q_view.neck_ay[0] == q_view.neck_ay[-1])
 
         prog.AddLinearEqualityConstraint(q_view.pelvis_y[0] == -q_view.pelvis_y[-1])
         prog.AddLinearEqualityConstraint(q_view.pelvis_z[0] == q_view.pelvis_z[-1])
@@ -326,26 +345,29 @@ class Atlas(Robot):
         b.pelvis_qx = -a.pelvis_qx
         b.pelvis_qz = -a.pelvis_qz
 
-        # b.l_arm_elx = -a.r_arm_elx
-        # b.r_arm_elx = -a.l_arm_elx
+        if not self.simplified:
+            b.l_arm_elx = -a.r_arm_elx
+            b.r_arm_elx = -a.l_arm_elx
 
-        # b.l_arm_ely = a.r_arm_ely
-        # b.r_arm_ely = a.l_arm_ely
+            b.l_arm_ely = a.r_arm_ely
+            b.r_arm_ely = a.l_arm_ely
 
-        # b.l_arm_shx = -a.r_arm_shx
-        # b.r_arm_shx = -a.l_arm_shx
+            b.l_arm_shx = -a.r_arm_shx
+            b.r_arm_shx = -a.l_arm_shx
 
-        # b.l_arm_shz = -a.r_arm_shz
-        # b.r_arm_shz = -a.l_arm_shz
+            b.l_arm_shz = -a.r_arm_shz
+            b.r_arm_shz = -a.l_arm_shz
 
-        # b.l_arm_mwx = -a.r_arm_mwx
-        # b.r_arm_mwx = -a.l_arm_mwx
+            b.l_arm_mwx = -a.r_arm_mwx
+            b.r_arm_mwx = -a.l_arm_mwx
 
-        # b.l_arm_uwy = a.r_arm_uwy
-        # b.r_arm_uwy = a.l_arm_uwy
+            b.l_arm_uwy = a.r_arm_uwy
+            b.r_arm_uwy = a.l_arm_uwy
 
-        # b.l_arm_lwy = a.r_arm_lwy
-        # b.r_arm_lwy = a.l_arm_lwy
+            b.l_arm_lwy = a.r_arm_lwy
+            b.r_arm_lwy = a.l_arm_lwy
+
+            b.neck_ay = a.neck_ay
 
         b.l_leg_akx = -a.r_leg_akx
         b.r_leg_akx = -a.l_leg_akx
@@ -368,7 +390,6 @@ class Atlas(Robot):
         b.back_bkx = -a.back_bkx
         b.back_bky = a.back_bky
         b.back_bkz = -a.back_bkz
-        # b.neck_ay = a.neck_ay
 
         return b
 

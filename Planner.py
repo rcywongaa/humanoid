@@ -274,7 +274,7 @@ def gait_optimization(robot_ctor):
 
     # TODO: Set solver parameters (mostly to make the worst case solve times less bad)
     snopt = SnoptSolver().solver_id()
-    prog.SetSolverOption(snopt, 'Iterations Limits', 5e5)
+    prog.SetSolverOption(snopt, 'Iterations Limits', 2e6)
     prog.SetSolverOption(snopt, 'Major Iterations Limit', 500)
     prog.SetSolverOption(snopt, 'Major Feasibility Tolerance', 5e-6)
     prog.SetSolverOption(snopt, 'Major Optimality Tolerance', 1e-4)
@@ -326,7 +326,7 @@ littledog_bound = partial(LittleDog, gait="bound")
 # gait_optimization(littledog_walking_trot)
 # gait_optimization(littledog_rotary_gallop)
 
-gait_optimization(Atlas)
+gait_optimization(partial(Atlas, simplified=True))
 
 import time
 time.sleep(1e5)
