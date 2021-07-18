@@ -19,12 +19,11 @@ from Atlas import Atlas
 import numpy as np
 import random
 from pydrake.all import (
-        DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, SceneGraph,
+        DiagramBuilder, MultibodyPlant, AddMultibodyPlantSceneGraph, SceneGraph, LeafSystem,
         MathematicalProgram, Solve, eq, le, ge, SnoptSolver,
         LinearQuadraticRegulator,
         JacobianWrtVariable,
-        BasicVector, LeafSystem,
-        Quaternion,
+        BasicVector, Quaternion, RigidTransform,
         ExternallyAppliedSpatialForce, SpatialForce, Value, List,
         Simulator, DrakeVisualizer
 )
@@ -62,6 +61,7 @@ class HumanoidController(LeafSystem):
         self.contacts_per_frame = self.robot.CONTACTS_PER_FRAME
         self.is_wbc = is_wbc
         self.upright_context = self.plant.CreateDefaultContext()
+        self.plant.SetFreeBodyPose(self.upright_context, self.plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.93845]))
         self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.num_positions() + self.plant.num_velocities())).get_index()
@@ -69,8 +69,8 @@ class HumanoidController(LeafSystem):
 
         if self.is_wbc:
             com_dim = 3
-            self.x_size = 2*com_dim
-            self.u_size = com_dim
+            self.x_size = 4
+            self.u_size = 2
             self.input_r_des_idx = self.DeclareVectorInputPort("r_des", BasicVector(com_dim)).get_index()
             self.input_rd_des_idx = self.DeclareVectorInputPort("rd_des", BasicVector(com_dim)).get_index()
             self.input_rdd_des_idx = self.DeclareVectorInputPort("rdd_des", BasicVector(com_dim)).get_index()
@@ -155,7 +155,7 @@ class HumanoidController(LeafSystem):
             contact_positions = self.plant.CalcPointsPositions(
                     plant_context, self.plant.GetFrameByName(frame),
                     contacts, self.plant.world_frame())
-            active_contacts_per_frame[frame] = contacts[:, np.where(contact_positions[2,:] <= 0.0)[0]]
+            active_contacts_per_frame[frame] = contacts[:, np.where(contact_positions[2,:] <= 1e-4)[0]]
 
         N_c = sum([active_contacts.shape[1] for active_contacts in active_contacts_per_frame.values()]) # num contact points
         if N_c == 0:
@@ -231,7 +231,15 @@ class HumanoidController(LeafSystem):
         eta = prog.NewContinuousVariables(J.shape[0], name="eta")
         self.eta = eta
 
-        x = prog.NewContinuousVariables(self.x_size, name="x") # x_com, y_com, x_com_d, y_com_d
+        q = self.plant.GetPositions(plant_context)
+        qd = self.plant.GetVelocities(plant_context)
+
+        com = self.plant.CalcCenterOfMassPositionInWorld(plant_context)
+        com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
+                plant_context, JacobianWrtVariable.kV,
+                self.plant.world_frame(), self.plant.world_frame()).dot(qd)
+
+        x = np.array([com[0], com[1], com_d[0], com_d[1]])
         self.x = x
         u = prog.NewContinuousVariables(self.u_size, name="u") # x_com_dd, y_com_dd
         self.u = u
@@ -242,9 +250,6 @@ class HumanoidController(LeafSystem):
         K_p = 10.0
         K_d = 4.0
         frame_weights = np.ones((self.robot.nv))
-
-        q = self.plant.GetPositions(plant_context)
-        qd = self.plant.GetVelocities(plant_context)
 
         # Convert q, q_nom to generalized velocities form
         q_err = self.plant.MapQDotToVelocity(plant_context, q_des - q)
@@ -266,7 +271,7 @@ class HumanoidController(LeafSystem):
         ''' Eq(11) - 0.003s '''
         eq11_lhs = H_f.dot(qdd)+C_f
         eq11_rhs = Phi_f_T.dot(lambd)
-        prog.AddLinearConstraint(eq(eq11_lhs, eq11_rhs))
+        prog.AddLinearConstraint(eq(eq11_lhs, eq11_rhs)).evaluator().set_description("Eq(11)")
 
         ''' Eq(12) - 0.005s '''
         alpha = 0.1
@@ -282,38 +287,28 @@ class HumanoidController(LeafSystem):
         assert(Jd_qd.shape == (N_c*3,))
         eq12_lhs = J.dot(qdd) + Jd_qd
         eq12_rhs = -alpha*J.dot(qd) + eta
-        prog.AddLinearConstraint(eq(eq12_lhs, eq12_rhs))
+        prog.AddLinearConstraint(eq(eq12_lhs, eq12_rhs)).evaluator().set_description("Eq(12)")
 
         ''' Eq(13) - 0.015s '''
         def tau(qdd, lambd):
             return self.B_a_inv.dot(H_a.dot(qdd) + C_a - Phi_a_T.dot(lambd))
         self.tau = tau
         eq13_lhs = self.tau(qdd, lambd)
-        prog.AddLinearConstraint(ge(eq13_lhs, -self.sorted_max_efforts))
-        prog.AddLinearConstraint(le(eq13_lhs, self.sorted_max_efforts))
+        # AddBoundingBoxConstraint cannot be used with Expression eq13_lhs
+        # prog.AddBoundingBoxConstraint(-self.sorted_max_efforts, self.sorted_max_efforts, eq13_lhs)
+        prog.AddLinearConstraint(ge(eq13_lhs, -self.sorted_max_efforts)).evaluator().set_description("Eq(13 lower)")
+        prog.AddLinearConstraint(le(eq13_lhs, self.sorted_max_efforts)).evaluator().set_description("Eq(13 upper)")
 
         ''' Eq(14) '''
         for j in range(N_c):
             beta_v = beta[:,j].dot(v[:,j])
-            prog.AddLinearConstraint(eq(lambd[N_f*j:N_f*j+3], beta_v))
+            prog.AddLinearConstraint(eq(lambd[N_f*j:N_f*j+3], beta_v)).evaluator().set_description("Eq(14)")
 
         ''' Eq(15) '''
-        for b in beta.flat:
-            prog.AddLinearConstraint(b >= 0.0)
+        prog.AddBoundingBoxConstraint(0, np.inf, beta).evaluator().set_description("Eq(15)")
 
         ''' Eq(16) '''
-        prog.AddLinearConstraint(ge(eta, eta_min))
-        prog.AddLinearConstraint(le(eta, eta_max))
-
-        ''' Enforce x as com '''
-        com = self.plant.CalcCenterOfMassPositionInWorld(plant_context)
-        com_d = self.plant.CalcJacobianCenterOfMassTranslationalVelocity(
-                plant_context, JacobianWrtVariable.kV,
-                self.plant.world_frame(), self.plant.world_frame()).dot(qd)
-        prog.AddLinearConstraint(x[0] == com[0])
-        prog.AddLinearConstraint(x[1] == com[1])
-        prog.AddLinearConstraint(x[2] == com_d[0])
-        prog.AddLinearConstraint(x[3] == com_d[1])
+        prog.AddBoundingBoxConstraint(eta_min, eta_max, eta).evaluator().set_description("Eq(16)")
 
         ''' Enforce u as com_dd '''
         com_dd = (
@@ -324,8 +319,8 @@ class HumanoidController(LeafSystem):
                     plant_context, JacobianWrtVariable.kV,
                     self.plant.world_frame(), self.plant.world_frame())
                 .dot(qdd))
-        prog.AddLinearConstraint(u[0] == com_dd[0])
-        prog.AddLinearConstraint(u[1] == com_dd[1])
+        prog.AddLinearConstraint(u[0] == com_dd[0]).evaluator().set_description("u[0] == com_dd[0]")
+        prog.AddLinearConstraint(u[1] == com_dd[1]).evaluator().set_description("u[1] == com_dd[1]")
 
         ''' Respect joint limits '''
         for name, limit in Atlas.JOINT_LIMITS.items():
@@ -338,11 +333,11 @@ class HumanoidController(LeafSystem):
             q_idx = getJointIndexInGeneralizedVelocities(self.plant, name)
 
             if joint_pos >= limit.upper:
-                # print(f"Joint {name} max reached")
-                prog.AddLinearConstraint(qdd[q_idx] <= 0.0)
+                print(f"Joint {name} max reached")
+                prog.AddLinearConstraint(qdd[q_idx] <= 0.0).evaluator().set_description(f"Joint[{q_idx}] upper limit")
             elif joint_pos <= limit.lower:
-                # print(f"Joint {name} min reached")
-                prog.AddLinearConstraint(qdd[q_idx] >= 0.0)
+                print(f"Joint {name} min reached")
+                prog.AddLinearConstraint(qdd[q_idx] >= 0.0).evaluator().set_description(f"Joint[{q_idx}] lower limit")
 
         return prog
 
@@ -371,14 +366,15 @@ class HumanoidController(LeafSystem):
             print("Invalid program!")
             output.SetFromVector([0]*self.plant.num_actuated_dofs())
             return
-        # print(f"Formulate time: {time.time() - start_formulate_time}s")
+        print(f"Formulate time: {time.time() - start_formulate_time}s")
         start_solve_time = time.time()
         result = Solve(prog)
-        # print(f"Solve time: {time.time() - start_solve_time}s")
+        print(f"Solve time: {time.time() - start_solve_time}s")
         if not result.is_success():
             print(f"FAILED")
             output.SetFromVector([0]*self.plant.num_actuated_dofs())
-        # print(f"Cost: {result.get_optimal_cost()}")
+            pdb.set_trace()
+        print(f"Cost: {result.get_optimal_cost()}")
         qdd_sol = result.GetSolution(self.qdd)
         lambd_sol = result.GetSolution(self.lambd)
         x_sol = result.GetSolution(self.x)
@@ -498,12 +494,12 @@ def main():
     diagram = builder.Build()
     diagram_context = diagram.CreateDefaultContext()
     sim_plant_context = diagram.GetMutableSubsystemContext(sim_plant, diagram_context)
-    sim_robot.set_home(sim_plant, sim_plant_context)
+    sim_plant.SetFreeBodyPose(sim_plant_context, sim_plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.93845]))
     controller_context = diagram.GetMutableSubsystemContext(controller, diagram_context)
     controller.GetInputPort("y_des").FixValue(controller_context, np.array([0.1, 0.0]))
 
     simulator = Simulator(diagram, diagram_context)
-    simulator.set_target_realtime_rate(0.04)
+    simulator.set_target_realtime_rate(0.1)
     simulator.AdvanceTo(20.0)
 
 if __name__ == "__main__":

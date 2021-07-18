@@ -9,7 +9,7 @@
    - An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion (Scott Kuindersma, Frank Permenter, and Russ Tedrake)
    - Roughly equivalent to [`InstantaneousQPController`](https://github.com/RobotLocomotion/drake/blob/last_sha_with_original_matlab/drake/systems/controllers/InstantaneousQPController.cpp)
 
-## Controller (Broken)
+## Controller
 ### Disturbance Rejection (Sped up 40x)
 1. Launch `drake-visualizer`
    ```
