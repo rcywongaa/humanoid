@@ -80,7 +80,7 @@ Use gcc 7 instead of gcc 8
 
 In `CMakeLists.txt`, add `--define="-DUSE_SYSTEM_VTK=OFF"` after `${BAZEL_TARGETS}`
 
-## Resources
+## Random Notes
 
 ### Affordable Robots
 - Thormang
