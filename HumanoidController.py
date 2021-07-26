@@ -25,12 +25,15 @@ from pydrake.all import (
         JacobianWrtVariable,
         BasicVector, Quaternion, RigidTransform,
         ExternallyAppliedSpatialForce, SpatialForce, Value, List,
-        Simulator, DrakeVisualizer
+        Simulator, DrakeVisualizer, ConnectMeshcatVisualizer
 )
 from functools import partial
 
 import time
 import pdb
+
+import sys
+from meshcat.servers.zmqserver import start_zmq_server_as_subprocess
 
 z_com = 1.220 # COM after 0.05s
 zmp_state_size = 2
@@ -60,9 +63,9 @@ class HumanoidController(LeafSystem):
         self.robot = robot_ctor(self.plant)
         self.contacts_per_frame = self.robot.CONTACTS_PER_FRAME
         self.is_wbc = is_wbc
-        self.upright_context = self.plant.CreateDefaultContext()
-        self.plant.SetFreeBodyPose(self.upright_context, self.plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.93845]))
-        self.q_nom = self.plant.GetPositions(self.upright_context) # Nominal upright pose
+        self.context = self.plant.CreateDefaultContext()
+        self.plant.SetFreeBodyPose(self.context, self.plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.93845]))
+        self.q_nom = self.plant.GetPositions(self.context) # Nominal upright pose
         self.input_q_v_idx = self.DeclareVectorInputPort("q_v",
                 BasicVector(self.plant.num_positions() + self.plant.num_velocities())).get_index()
         self.output_tau_idx = self.DeclareVectorOutputPort("tau", BasicVector(self.robot.NUM_ACTUATED_DOF), self.calcTorqueOutput).get_index()
@@ -342,6 +345,7 @@ class HumanoidController(LeafSystem):
         return prog
 
     def calcTorqueOutput(self, context, output):
+        print(f"===== TIME: {context.get_time()} =====")
         q_v = self.EvalVectorInput(context, self.input_q_v_idx).get_value()
         if self.is_wbc:
             r = self.EvalVectorInput(context, self.input_r_des_idx).get_value()
@@ -357,11 +361,12 @@ class HumanoidController(LeafSystem):
             q_des = self.q_nom
             v_des = [0.0] * self.plant.num_velocities()
             vd_des = [0.0] * self.plant.num_velocities()
-        current_plant_context = self.plant.CreateDefaultContext()
-        self.plant.SetPositionsAndVelocities(current_plant_context, q_v)
+
+        if not np.array_equal(q_v, self.plant.GetPositionsAndVelocities(self.context)):
+            self.plant.SetPositionsAndVelocities(self.context, q_v)
 
         start_formulate_time = time.time()
-        prog = self.create_qp1(current_plant_context, V, q_des, v_des, vd_des)
+        prog = self.create_qp1(self.context, V, q_des, v_des, vd_des)
         if not prog:
             print("Invalid program!")
             output.SetFromVector([0]*self.plant.num_actuated_dofs())
@@ -385,27 +390,28 @@ class HumanoidController(LeafSystem):
         tau = self.tau(qdd_sol, lambd_sol)
         output.SetFromVector(tau)
 
-        # com, comd, comdd = self.calcCOM(current_plant_context, result)
-        # print(f"comdd z: {comdd[2]}")
-        # self.plant.EvalBodyPoseInWorld(current_plant_context, self.plant.GetBodyByName("pelvis")).rotation().ToQuaternion().xyz()
-        # print(f"pelvis angular position = {Quaternion(normalize(q_v[0:4])).xyz()}")
-        # print(f"pelvis angular velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3]}")
-        # print(f"pelvis angular acceleration = {qdd_sol[0:3]}")
-        # print(f"pelvis translational position = {q_v[4:7]}")
-        # print(f"pelvis translational velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3 : FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 6]}")
-        # print(f"pelvis translational acceleration = {qdd_sol[3:6]}")
-        # print(f"beta = {beta_sol}")
-        # print(f"lambda z = {lambd_sol[2::3]}")
-        # print(f"Total force z = {np.sum(lambd_sol[2::3])}")
+    def print_debug(self, context, result):
+        com, comd, comdd = self.calcCOM(context, result)
+        print(f"comdd z: {comdd[2]}")
+        self.plant.EvalBodyPoseInWorld(context, self.plant.GetBodyByName("pelvis")).rotation().ToQuaternion().xyz()
+        print(f"pelvis angular position = {Quaternion(normalize(q_v[0:4])).xyz()}")
+        print(f"pelvis angular velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF:FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3]}")
+        print(f"pelvis angular acceleration = {qdd_sol[0:3]}")
+        print(f"pelvis translational position = {q_v[4:7]}")
+        print(f"pelvis translational velocity = {q_v[Atlas.FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 3 : FLOATING_BASE_QUAT_DOF + Atlas.NUM_ACTUATED_DOF + 6]}")
+        print(f"pelvis translational acceleration = {qdd_sol[3:6]}")
+        print(f"beta = {beta_sol}")
+        print(f"lambda z = {lambd_sol[2::3]}")
+        print(f"Total force z = {np.sum(lambd_sol[2::3])}")
 
-        # interested_joints = [
-                # "back_bky",
-                # "l_leg_hpy",
-                # "r_leg_hpy"
-        # ]
-        # print(f"tau = {tau[getActuatorIndices(self.plant, interested_joints)]}")
-        # print(f"joint angles = {getJointValues(self.plant, interested_joints, current_plant_context)}")
-        # print("========================================")
+        interested_joints = [
+                "back_bky",
+                "l_leg_hpy",
+                "r_leg_hpy"
+        ]
+        print(f"tau = {tau[getActuatorIndices(self.plant, interested_joints)]}")
+        print(f"joint angles = {getJointValues(self.plant, interested_joints, context)}")
+        print("========================================")
 
     def calcCOM(self, current_plant_context, result):
         qdd_sol = result.GetSolution(self.qdd)
@@ -490,8 +496,14 @@ def main():
     builder.Connect(sim_plant.get_state_output_port(), controller.GetInputPort("q_v"))
     builder.Connect(controller.GetOutputPort("tau"), sim_plant.get_actuation_input_port())
 
-    DrakeVisualizer.AddToBuilder(builder=builder, scene_graph=scene_graph)
+    # Do not use drake-visualizer until I figure out how to load meshes from custom directory
+    # DrakeVisualizer.AddToBuilder(builder=builder, scene_graph=scene_graph)
+
+    proc, zmq_url, web_url = start_zmq_server_as_subprocess()
+    visualizer = ConnectMeshcatVisualizer(builder=builder, scene_graph=scene_graph, zmq_url=zmq_url)
     diagram = builder.Build()
+    visualizer.load()
+    visualizer.start_recording()
     diagram_context = diagram.CreateDefaultContext()
     sim_plant_context = diagram.GetMutableSubsystemContext(sim_plant, diagram_context)
     sim_plant.SetFreeBodyPose(sim_plant_context, sim_plant.GetBodyByName("pelvis"), RigidTransform([0, 0, 0.93845]))
@@ -501,6 +513,8 @@ def main():
     simulator = Simulator(diagram, diagram_context)
     simulator.set_target_realtime_rate(0.1)
     simulator.AdvanceTo(20.0)
+    visualizer.stop_recording()
+    visualizer.publish_recording()
 
 if __name__ == "__main__":
     main()
