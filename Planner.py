@@ -92,7 +92,6 @@ def gait_optimization(robot_ctor):
     for n in range(N):
         # Joint limits
         prog.AddBoundingBoxConstraint(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits(), q[:,n])
-        pdb.set_trace()
         # Joint velocity limits
         prog.AddBoundingBoxConstraint(plant.GetVelocityLowerLimits(), plant.GetVelocityUpperLimits(), v[:,n])
         # Unit quaternions
