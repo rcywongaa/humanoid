@@ -32,7 +32,6 @@ from functools import partial
 import time
 import pdb
 
-import sys
 from meshcat.servers.zmqserver import start_zmq_server_as_subprocess
 
 z_com = 1.220 # COM after 0.05s

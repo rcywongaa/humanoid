@@ -19,10 +19,8 @@ from pydrake.all import (
     AddUnitQuaternionConstraintOnPlant, PositionConstraint, OrientationConstraint
 )
 
-import sys
 from meshcat.servers.zmqserver import start_zmq_server_as_subprocess
-proc, zmq_url, web_url = start_zmq_server_as_subprocess(
-    server_args=['--ngrok_http_tunnel'] if 'google.colab' in sys.modules else [])
+proc, zmq_url, web_url = start_zmq_server_as_subprocess()
 
 # Need this because a==b returns True even if a = AutoDiffXd(1, [1, 2]), b= AutoDiffXd(2, [3, 4])
 # That's the behavior of AutoDiffXd in C++, also.
@@ -94,6 +92,7 @@ def gait_optimization(robot_ctor):
     for n in range(N):
         # Joint limits
         prog.AddBoundingBoxConstraint(plant.GetPositionLowerLimits(), plant.GetPositionUpperLimits(), q[:,n])
+        pdb.set_trace()
         # Joint velocity limits
         prog.AddBoundingBoxConstraint(plant.GetVelocityLowerLimits(), plant.GetVelocityUpperLimits(), v[:,n])
         # Unit quaternions
