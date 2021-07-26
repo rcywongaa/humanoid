@@ -437,11 +437,12 @@ def rand_2d_vec(mag):
     return [mag*np.cos(angle), mag*np.sin(angle)]
 
 class ForceDisturber(LeafSystem):
-    def __init__(self, target_body_index, start_time, disturb_duration, disturb_period):
+    def __init__(self, target_body_index, start_time, disturb_duration, disturb_period, magnitude):
         LeafSystem.__init__(self)
         self.target_body_index = target_body_index
         self.disturb_duration = disturb_duration
         self.disturb_period = disturb_period
+        self.magnitude = magnitude
         self.start_time = start_time
         forces_cls = Value[List[ExternallyAppliedSpatialForce]]
         self.DeclareAbstractOutputPort(
@@ -461,7 +462,7 @@ class ForceDisturber(LeafSystem):
                 self.last_disturb_time = curr_time
                 self.start_disturb_time = curr_time
                 self.last_disturb_time = curr_time
-                self.force = rand_2d_vec(80) + [0.0]
+                self.force = rand_2d_vec(self.magnitude) + [0.0]
                 self.position = [0.0, rand_float(-0.2, 0.2), rand_float(0.0, 0.5)]
                 print(f"{curr_time}: Disturbing with {self.force} at {self.position}")
                 # self.force = [5.0, 50.0, 0.0]
@@ -489,7 +490,11 @@ def main():
     controller.set_name("HumanoidController")
 
     disturber = builder.AddSystem(ForceDisturber(
-        sim_plant.GetBodyByName("utorso").index(), 4, 0.1, 2))
+        sim_plant.GetBodyByName("utorso").index(),
+        start_time=4,
+        disturb_duration=0.1,
+        disturb_period=2,
+        magnitude=120))
     builder.Connect(disturber.get_output_port(0), sim_plant.get_applied_spatial_force_input_port())
 
     builder.Connect(sim_plant.get_state_output_port(), controller.GetInputPort("q_v"))
@@ -504,7 +509,7 @@ def main():
     contact_vis = builder.AddSystem(MeshcatContactVisualizer(
         meshcat_viz=visualizer,
         plant=sim_plant,
-        contact_force_scale=500))
+        contact_force_scale=400))
     contact_input_port = contact_vis.GetInputPort("contact_results")
     builder.Connect(
         sim_plant.GetOutputPort("contact_results"),

@@ -14,6 +14,7 @@
 1. Run `python3 HumanoidController.py`
 
 - Formulate-Solve Time: 0.04s
+- 20s of simulation takes around 20mins to run
 
 ![Disturbance](resources/disturbance.gif)
 
