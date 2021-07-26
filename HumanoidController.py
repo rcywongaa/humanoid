@@ -25,7 +25,7 @@ from pydrake.all import (
         JacobianWrtVariable,
         BasicVector, Quaternion, RigidTransform,
         ExternallyAppliedSpatialForce, SpatialForce, Value, List,
-        Simulator, DrakeVisualizer, ConnectMeshcatVisualizer
+        Simulator, DrakeVisualizer, ConnectMeshcatVisualizer, MeshcatContactVisualizer
 )
 from functools import partial
 
@@ -500,6 +500,16 @@ def main():
 
     proc, zmq_url, web_url = start_zmq_server_as_subprocess()
     visualizer = ConnectMeshcatVisualizer(builder=builder, scene_graph=scene_graph, zmq_url=zmq_url)
+
+    contact_vis = builder.AddSystem(MeshcatContactVisualizer(
+        meshcat_viz=visualizer,
+        plant=sim_plant,
+        contact_force_scale=500))
+    contact_input_port = contact_vis.GetInputPort("contact_results")
+    builder.Connect(
+        sim_plant.GetOutputPort("contact_results"),
+        contact_input_port)
+
     diagram = builder.Build()
     visualizer.load()
     visualizer.start_recording()
