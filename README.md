@@ -10,9 +10,8 @@
    - Roughly equivalent to [`InstantaneousQPController`](https://github.com/RobotLocomotion/drake/blob/last_sha_with_original_matlab/drake/systems/controllers/InstantaneousQPController.cpp)
 
 ## Controller
-### Disturbance Rejection (Sped up 40x)
+### Disturbance Rejection
 1. Run `python3 HumanoidController.py`
-
 - Formulate-Solve Time: 0.04s
 - 20s of simulation takes around 20mins to run
 
