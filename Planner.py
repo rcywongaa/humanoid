@@ -31,8 +31,8 @@ def gait_optimization(robot_ctor):
     builder = DiagramBuilder()
     plant, scene_graph = AddMultibodyPlantSceneGraph(builder, 1e-3)
     robot = robot_ctor(plant)
-    visualizer = ConnectMeshcatVisualizer(builder, 
-        scene_graph=scene_graph, 
+    visualizer = ConnectMeshcatVisualizer(builder,
+        scene_graph=scene_graph,
         zmq_url=zmq_url)
     diagram = builder.Build()
     context = diagram.CreateDefaultContext()
@@ -51,7 +51,7 @@ def gait_optimization(robot_ctor):
     total_mass = robot.get_total_mass(context)
     gravity = plant.gravity_field().gravity_vector()
     g = 9.81
-    
+
     contact_frame = robot.get_contact_frames()
 
     in_stance = robot.get_stance_schedule()
@@ -60,16 +60,16 @@ def gait_optimization(robot_ctor):
     check_self_collision = robot.get_check_self_collision()
     stride_length = robot.get_stride_length()
     speed = robot.get_speed()
-    
+
     T = stride_length / speed
     if is_laterally_symmetric:
         T = T / 2.0
 
-    prog = MathematicalProgram()        
+    prog = MathematicalProgram()
 
-    # Time steps    
+    # Time steps
     h = prog.NewContinuousVariables(N-1, "h")
-    prog.AddBoundingBoxConstraint(0.5*T/N, 2.0*T/N, h) 
+    prog.AddBoundingBoxConstraint(0.5*T/N, 2.0*T/N, h)
     prog.AddLinearConstraint(sum(h) >= .9*T)
     prog.AddLinearConstraint(sum(h) <= 1.1*T)
 
@@ -97,9 +97,9 @@ def gait_optimization(robot_ctor):
         # Unit quaternions
         AddUnitQuaternionConstraintOnPlant(plant, q[:,n], prog)
         # Body orientation
-        prog.AddConstraint(OrientationConstraint(plant, 
+        prog.AddConstraint(OrientationConstraint(plant,
                                                  body_frame, RotationMatrix(),
-                                                 plant.world_frame(), RotationMatrix(), 
+                                                 plant.world_frame(), RotationMatrix(),
                                                  robot.max_body_rotation(), context[n]), q[:,n])
         # Initial guess for all joint angles is the home position
         prog.SetInitialGuess(q[:,n], q0)  # Solvers get stuck if the quaternion is initialized with all zeros.
@@ -123,8 +123,8 @@ def gait_optimization(robot_ctor):
         return v - v_from_qdot
     for n in range(N-1):
         prog.AddConstraint(
-            partial(velocity_dynamics_constraint, context_index=n), 
-            lb=[0]*nv, ub=[0]*nv, 
+            partial(velocity_dynamics_constraint, context_index=n),
+            lb=[0]*nv, ub=[0]*nv,
             vars=np.concatenate(([h[n]], q[:,n], v[:,n], q[:,n+1])))
 
     # Contact forces
@@ -139,7 +139,7 @@ def gait_optimization(robot_ctor):
             prog.AddLinearConstraint(-contact_force[contact][1,n] <= mu*contact_force[contact][2,n])
             # normal force >=0, normal_force == 0 if not in_stance
             # max normal force assumed to be 4mg
-            prog.AddBoundingBoxConstraint(0, in_stance[contact,n]*4*g*total_mass, contact_force[contact][2,n])            
+            prog.AddBoundingBoxConstraint(0, in_stance[contact,n]*4*g*total_mass, contact_force[contact][2,n])
 
     # Center of mass variables and constraints
     com = prog.NewContinuousVariables(3, N, "com")
@@ -198,7 +198,7 @@ def gait_optimization(robot_ctor):
     for n in range(N-1):
         prog.AddConstraint(eq(H[:,n+1], H[:,n] + h[n]*Hdot[:,n]))
         Fn = np.concatenate([contact_force[i][:,n] for i in range(4)])
-        prog.AddConstraint(partial(angular_momentum_constraint, context_index=n), lb=np.zeros(3), ub=np.zeros(3), 
+        prog.AddConstraint(partial(angular_momentum_constraint, context_index=n), lb=np.zeros(3), ub=np.zeros(3),
                            vars=np.concatenate((q[:,n], com[:,n], Hdot[:,n], Fn)))
 
     # com == CenterOfMass(q), H = SpatialMomentumInWorldAboutPoint(q, v, com)
@@ -218,7 +218,7 @@ def gait_optimization(robot_ctor):
             H_qv = plant.CalcSpatialMomentumInWorldAboutPoint(context[context_index], com).rotational()
         return np.concatenate((com_q - com, H_qv - H))
     for n in range(N):
-        prog.AddConstraint(partial(com_constraint, context_index=n), 
+        prog.AddConstraint(partial(com_constraint, context_index=n),
             lb=np.zeros(6), ub=np.zeros(6), vars=np.concatenate((q[:,n], v[:,n], com[:,n], H[:,n])))
 
     # TODO: Add collision constraints
@@ -246,7 +246,7 @@ def gait_optimization(robot_ctor):
             if in_stance[i, n]:
                 # foot should be on the ground (world position z=0)
                 prog.AddConstraint(PositionConstraint(
-                    plant, plant.world_frame(), [-np.inf,-np.inf,0], [np.inf,np.inf,0], 
+                    plant, plant.world_frame(), [-np.inf,-np.inf,0], [np.inf,np.inf,0],
                     contact_frame[i], [0,0,0], context[n]), q[:,n])
                 if n > 0 and in_stance[i, n-1]:
                     # feet should not move during stance.
@@ -281,8 +281,8 @@ def gait_optimization(robot_ctor):
     # prog.SetSolverOption(snopt, 'Scale option', 2)
     prog.SetSolverOption(snopt, 'Print file', 'snopt.out')
 
-    # TODO a few more costs/constraints from 
-    # from https://github.com/RobotLocomotion/LittleDog/blob/master/gaitOptimization.m 
+    # TODO a few more costs/constraints from
+    # from https://github.com/RobotLocomotion/LittleDog/blob/master/gaitOptimization.m
 
     result = Solve(prog)
     print(f"{result.get_solver_id().name()}: {result.is_success()}")
