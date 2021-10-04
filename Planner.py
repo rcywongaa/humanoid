@@ -9,6 +9,7 @@ from LittleDog import LittleDog
 from Atlas import Atlas
 
 import pdb
+import time
 from functools import partial
 import numpy as np
 from pydrake.all import AddMultibodyPlantSceneGraph, DiagramBuilder, Parser, ConnectMeshcatVisualizer, RigidTransform, Simulator, PidController
@@ -284,8 +285,9 @@ def gait_optimization(robot_ctor):
     # TODO a few more costs/constraints from
     # from https://github.com/RobotLocomotion/LittleDog/blob/master/gaitOptimization.m
 
+    now = time.time()
     result = Solve(prog)
-    print(f"{result.get_solver_id().name()}: {result.is_success()}")
+    print(f"{time.time() - now}s - {result.get_solver_id().name()}: {result.is_success()}, Cost: {result.get_optimal_cost()}")
     #print(result.is_success())  # We expect this to be false if iterations are limited.
 
     # Animate trajectory
@@ -326,5 +328,4 @@ littledog_bound = partial(LittleDog, gait="bound")
 
 gait_optimization(partial(Atlas, simplified=True))
 
-import time
 time.sleep(1e5)
