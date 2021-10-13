@@ -311,7 +311,7 @@ def gait_optimization(robot_ctor):
                 robot.increment_periodic_view(qt, stride_length/2.0)
             stride = stride // 2
         robot.increment_periodic_view(qt, stride*stride_length)
-        plant.SetPositions(plant_context, qt)
+        plant.SetPositions(plant_context, np.array(qt))
         diagram.Publish(context)
 
     visualizer.stop_recording()
