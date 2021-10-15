@@ -27,6 +27,9 @@ python3 Planner.py
   SNOPTA EXIT  80 -- insufficient storage allocated
   SNOPTA INFO  83 -- not enough integer storage
   ```
+- Potential fix: https://stackoverflow.com/questions/68295629/solving-error-of-snopt-in-drake-how-to-fix-it
+  But requires compiling from source which requires SNOPT license...
+  - If someone could lend me a SNOPT license, that'd be great... :pleading_face:
 - Decapitated and dismembered to improve solve time...
 
 ![Walking](resources/walking.gif)
