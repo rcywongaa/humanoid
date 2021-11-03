@@ -1,23 +1,30 @@
 # Humanoid Locomotion
 
-## Rough Idea
-1. Given start and end position, generate sequence of footsteps
-   - Footstep Planning on Uneven Terrain with Mixed-Integer Convex Optimization (Robin Deits and Russ Tedrake)
-1. Given sequence of footsteps, generate ZMP trajectory (`HumanoidPlanner.py`)
-   - Whole-body Motion Planning with Centroidal Dynamics and Full Kinematics (Hongkai Dai, Andrés Valenzuela and Russ Tedrake)
-1. Given ZMP trajectory and footstep sequence, generate torque outputs (`HumanoidController.py`)
-   - An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion (Scott Kuindersma, Frank Permenter, and Russ Tedrake)
-   - Roughly equivalent to [`InstantaneousQPController`](https://github.com/RobotLocomotion/drake/blob/last_sha_with_original_matlab/drake/systems/controllers/InstantaneousQPController.cpp)
-
 ## Controller
+An Efficiently Solvable Quadratic Program for Stabilizing Dynamic Locomotion (Scott Kuindersma, Frank Permenter, and Russ Tedrake)
+
+Roughly equivalent to [`InstantaneousQPController`](https://github.com/RobotLocomotion/drake/blob/last_sha_with_original_matlab/drake/systems/controllers/InstantaneousQPController.cpp)
+
 ### Disturbance Rejection
+Rejects random forces applied to upper torso at random directions and positions with magnitude 120N for 0.1s
+
 1. Run `python3 HumanoidController.py`
 - Formulate-Solve Time: 0.04s
 - 20s of simulation takes around 20mins to run
 
 ![Disturbance](resources/disturbance.gif)
 
-## Planner (WIP)
+### Trajectory tracking
+TODO
+
+## Planner
+Whole-body Motion Planning with Centroidal Dynamics and Full Kinematics (Hongkai Dai, Andrés Valenzuela and Russ Tedrake)
+
+Adapted from http://underactuated.mit.edu/humanoids.html#example1
+
+### Simple walking
+Simple forward walking trajectory with hard-coded contact schedule and periodicity
+
 ```
 python3 Planner.py
 ```
