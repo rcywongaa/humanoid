@@ -173,34 +173,36 @@ def gait_optimization(robot_ctor):
     prog.SetInitialGuess(H, np.zeros((3, N)))
     prog.SetInitialGuess(Hdot, np.zeros((3,N-1)))
     # Hdot = sum_i cross(p_FootiW-com, contact_force_i)
-    def angular_momentum_constraint(vars, context_index):
+    def angular_momentum_constraint(vars, context_index, active_contacts):
         q, com, Hdot, contact_force = np.split(vars, [nq, nq+3, nq+6])
-        contact_force = contact_force.reshape(3, 4, order='F')
+        contact_force = contact_force.reshape(3, num_contacts, order='F')
         if isinstance(vars[0], AutoDiffXd):
             q = autoDiffToValueMatrix(q)
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
                 plant.SetPositions(context[context_index], q)
             torque = np.zeros(3)
-            for i in range(4):
-                p_WF = plant.CalcPointsPositions(context[context_index], contact_frame[i], [0,0,0], plant.world_frame())
+            for contact in active_contacts:
+                p_WF = plant.CalcPointsPositions(context[context_index], contact_frame[contact], [0,0,0], plant.world_frame())
                 Jq_WF = plant.CalcJacobianTranslationalVelocity(
                     context[context_index], JacobianWrtVariable.kQDot,
-                    contact_frame[i], [0, 0, 0], plant.world_frame(), plant.world_frame())
+                    contact_frame[contact], [0, 0, 0], plant.world_frame(), plant.world_frame())
                 ad_p_WF = initializeAutoDiffGivenGradientMatrix(p_WF, np.hstack((Jq_WF, np.zeros((3, 18)))))
-                torque = torque     + np.cross(ad_p_WF.reshape(3) - com, contact_force[:,i])
+                torque = torque + np.cross(ad_p_WF.reshape(3) - com, contact_force[:,contact])
         else:
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
                 plant.SetPositions(context[context_index], q)
             torque = np.zeros(3)
-            for i in range(4):
-                p_WF = plant.CalcPointsPositions(context[context_index], contact_frame[i], [0,0,0], plant.world_frame())
-                torque += np.cross(p_WF.reshape(3) - com, contact_force[:,i])
+            for contact in active_contacts:
+                p_WF = plant.CalcPointsPositions(context[context_index], contact_frame[contact], [0,0,0], plant.world_frame())
+                torque += np.cross(p_WF.reshape(3) - com, contact_force[:,contact])
         return Hdot - torque
     for n in range(N-1):
         prog.AddConstraint(eq(H[:,n+1], H[:,n] + h[n]*Hdot[:,n]))
-        Fn = np.concatenate([contact_force[i][:,n] for i in range(4)])
-        prog.AddConstraint(partial(angular_momentum_constraint, context_index=n), lb=np.zeros(3), ub=np.zeros(3),
-                           vars=np.concatenate((q[:,n], com[:,n], Hdot[:,n], Fn)))
+        active_contacts = np.where(in_stance[:,n])[0]
+        Fn = np.concatenate([contact_force[i][:,n] for i in range(num_contacts)])
+        prog.AddConstraint(partial(angular_momentum_constraint, context_index=n, active_contacts=active_contacts),
+                lb=np.zeros(3), ub=np.zeros(3),
+                vars=np.concatenate((q[:,n], com[:,n], Hdot[:,n], Fn)))
 
     # com == CenterOfMass(q), H = SpatialMomentumInWorldAboutPoint(q, v, com)
     # Make a new autodiff context for this constraint (to maximize cache hits)
