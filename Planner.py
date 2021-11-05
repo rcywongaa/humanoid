@@ -131,6 +131,9 @@ def gait_optimization(robot_ctor):
     # Contact forces
     num_contacts = robot.get_num_contacts()
     contact_force = [prog.NewContinuousVariables(3, N-1, f"contact{contact}_contact_force") for contact in range(num_contacts)]
+    # forceScale = 9.81*total_mass
+    forceScale = 1.0 #not use scale
+
     for n in range(N-1):
         for contact in range(num_contacts):
             # Linear friction cone
@@ -165,7 +168,7 @@ def gait_optimization(robot_ctor):
         # which is a little more consistent with the LCP contact models.
         prog.AddConstraint(eq(com[:, n+1], com[:,n] + h[n]*comdot[:,n]))
         prog.AddConstraint(eq(comdot[:, n+1], comdot[:,n] + h[n]*comddot[:,n]))
-        prog.AddConstraint(eq(total_mass*comddot[:,n], sum(contact_force[i][:,n] for i in range(4)) + total_mass*gravity))
+        prog.AddConstraint(eq(total_mass*comddot[:,n], sum(forceScale*contact_force[i][:,n] for i in range(8)) + total_mass*gravity))
 
     # Angular momentum (about the center of mass)
     H = prog.NewContinuousVariables(3, N, "H")
@@ -175,30 +178,30 @@ def gait_optimization(robot_ctor):
     # Hdot = sum_i cross(p_FootiW-com, contact_force_i)
     def angular_momentum_constraint(vars, context_index):
         q, com, Hdot, contact_force = np.split(vars, [nq, nq+3, nq+6])
-        contact_force = contact_force.reshape(3, 4, order='F')
+        contact_force = contact_force.reshape(3, 8, order='F')
         if isinstance(vars[0], AutoDiffXd):
             q = autoDiffToValueMatrix(q)
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
                 plant.SetPositions(context[context_index], q)
             torque = np.zeros(3)
-            for i in range(4):
+            for i in range(8):
                 p_WF = plant.CalcPointsPositions(context[context_index], contact_frame[i], [0,0,0], plant.world_frame())
                 Jq_WF = plant.CalcJacobianTranslationalVelocity(
                     context[context_index], JacobianWrtVariable.kQDot,
                     contact_frame[i], [0, 0, 0], plant.world_frame(), plant.world_frame())
-                ad_p_WF = initializeAutoDiffGivenGradientMatrix(p_WF, np.hstack((Jq_WF, np.zeros((3, 18)))))
-                torque = torque     + np.cross(ad_p_WF.reshape(3) - com, contact_force[:,i])
+                ad_p_WF = initializeAutoDiffGivenGradientMatrix(p_WF, np.hstack((Jq_WF, np.zeros((3, 30)))))
+                torque = torque     + np.cross(ad_p_WF.reshape(3) - com, forceScale*contact_force[:,i])
         else:
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
                 plant.SetPositions(context[context_index], q)
             torque = np.zeros(3)
-            for i in range(4):
+            for i in range(8):
                 p_WF = plant.CalcPointsPositions(context[context_index], contact_frame[i], [0,0,0], plant.world_frame())
-                torque += np.cross(p_WF.reshape(3) - com, contact_force[:,i])
+                torque += np.cross(p_WF.reshape(3) - com, forceScale*contact_force[:,i])
         return Hdot - torque
     for n in range(N-1):
         prog.AddConstraint(eq(H[:,n+1], H[:,n] + h[n]*Hdot[:,n]))
-        Fn = np.concatenate([contact_force[i][:,n] for i in range(4)])
+        Fn = np.concatenate([contact_force[i][:,n] for i in range(8)])
         prog.AddConstraint(partial(angular_momentum_constraint, context_index=n), lb=np.zeros(3), ub=np.zeros(3),
                            vars=np.concatenate((q[:,n], com[:,n], Hdot[:,n], Fn)))
 
