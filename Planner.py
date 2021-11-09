@@ -15,8 +15,8 @@ import numpy as np
 from pydrake.all import AddMultibodyPlantSceneGraph, DiagramBuilder, Parser, ConnectMeshcatVisualizer, RigidTransform, Simulator, PidController
 from pydrake.all import (
     MultibodyPlant, JointIndex, RotationMatrix, PiecewisePolynomial, JacobianWrtVariable,
-    MathematicalProgram, Solve, eq, AutoDiffXd, autoDiffToGradientMatrix, SnoptSolver,
-    initializeAutoDiffGivenGradientMatrix, autoDiffToValueMatrix, autoDiffToGradientMatrix,
+    MathematicalProgram, Solve, eq, AutoDiffXd, ExtractGradient, SnoptSolver,
+    InitializeAutoDiff, ExtractValue, ExtractGradient,
     AddUnitQuaternionConstraintOnPlant, PositionConstraint, OrientationConstraint
 )
 
@@ -26,7 +26,7 @@ proc, zmq_url, web_url = start_zmq_server_as_subprocess()
 # Need this because a==b returns True even if a = AutoDiffXd(1, [1, 2]), b= AutoDiffXd(2, [3, 4])
 # That's the behavior of AutoDiffXd in C++, also.
 def autoDiffArrayEqual(a,b):
-    return np.array_equal(a, b) and np.array_equal(autoDiffToGradientMatrix(a), autoDiffToGradientMatrix(b))
+    return np.array_equal(a, b) and np.array_equal(ExtractGradient(a), ExtractGradient(b))
 
 def gait_optimization(robot_ctor):
     builder = DiagramBuilder()
@@ -177,7 +177,7 @@ def gait_optimization(robot_ctor):
         q, com, Hdot, contact_force = np.split(vars, [nq, nq+3, nq+6])
         contact_force = contact_force.reshape(3, num_contacts, order='F')
         if isinstance(vars[0], AutoDiffXd):
-            q = autoDiffToValueMatrix(q)
+            q = ExtractValue(q)
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
                 plant.SetPositions(context[context_index], q)
             torque = np.zeros(3)
@@ -186,7 +186,7 @@ def gait_optimization(robot_ctor):
                 Jq_WF = plant.CalcJacobianTranslationalVelocity(
                     context[context_index], JacobianWrtVariable.kQDot,
                     contact_frame[contact], [0, 0, 0], plant.world_frame(), plant.world_frame())
-                ad_p_WF = initializeAutoDiffGivenGradientMatrix(p_WF, np.hstack((Jq_WF, np.zeros((3, 18)))))
+                ad_p_WF = InitializeAutoDiff(p_WF, np.hstack((Jq_WF, np.zeros((3, 18)))))
                 torque = torque + np.cross(ad_p_WF.reshape(3) - com, contact_force[:,contact])
         else:
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
@@ -240,8 +240,8 @@ def gait_optimization(robot_ctor):
                                                     frame, [0, 0, 0], plant.world_frame(), plant.world_frame())
             J_WF_n = plant.CalcJacobianTranslationalVelocity(context[context_index+1], JacobianWrtVariable.kQDot,
                                                     frame, [0, 0, 0], plant.world_frame(), plant.world_frame())
-            return initializeAutoDiffGivenGradientMatrix(
-                p_WF_n - p_WF, J_WF_n @ autoDiffToGradientMatrix(qn) - J_WF @ autoDiffToGradientMatrix(q))
+            return InitializeAutoDiff(
+                p_WF_n - p_WF, J_WF_n @ ExtractGradient(qn) - J_WF @ ExtractGradient(q))
         else:
             return p_WF_n - p_WF
     for i in range(robot.get_num_contacts()):
