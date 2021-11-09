@@ -279,7 +279,7 @@ def gait_optimization(robot_ctor):
     prog.SetSolverOption(snopt, 'Major Iterations Limit', 500)
     prog.SetSolverOption(snopt, 'Major Feasibility Tolerance', 5e-6)
     prog.SetSolverOption(snopt, 'Major Optimality Tolerance', 1e-4)
-    prog.SetSolverOption(snopt, 'Superbasics limit', 2000)
+    prog.SetSolverOption(snopt, 'Superbasics limit', 4000)
     prog.SetSolverOption(snopt, 'Linesearch tolerance', 0.9)
     # prog.SetSolverOption(snopt, 'Scale option', 2)
     prog.SetSolverOption(snopt, 'Print file', 'snopt.out')
