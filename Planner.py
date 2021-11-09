@@ -130,17 +130,20 @@ def gait_optimization(robot_ctor):
 
     # Contact forces
     num_contacts = robot.get_num_contacts()
-    contact_force = [prog.NewContinuousVariables(3, N-1, f"contact{contact}_contact_force") for contact in range(num_contacts)]
+    normalized_contact_force = [prog.NewContinuousVariables(3, N-1, f"contact{contact}_normalized_contact_force") for contact in range(num_contacts)]
+    max_contact_force = 4*g*total_mass
     for n in range(N-1):
         for contact in range(num_contacts):
             # Linear friction cone
-            prog.AddLinearConstraint(contact_force[contact][0,n] <= mu*contact_force[contact][2,n])
-            prog.AddLinearConstraint(-contact_force[contact][0,n] <= mu*contact_force[contact][2,n])
-            prog.AddLinearConstraint(contact_force[contact][1,n] <= mu*contact_force[contact][2,n])
-            prog.AddLinearConstraint(-contact_force[contact][1,n] <= mu*contact_force[contact][2,n])
+            prog.AddLinearConstraint(normalized_contact_force[contact][0,n] <= mu*normalized_contact_force[contact][2,n])
+            prog.AddLinearConstraint(-normalized_contact_force[contact][0,n] <= mu*normalized_contact_force[contact][2,n])
+            prog.AddLinearConstraint(normalized_contact_force[contact][1,n] <= mu*normalized_contact_force[contact][2,n])
+            prog.AddLinearConstraint(-normalized_contact_force[contact][1,n] <= mu*normalized_contact_force[contact][2,n])
             # normal force >=0, normal_force == 0 if not in_stance
             # max normal force assumed to be 4mg
-            prog.AddBoundingBoxConstraint(0, in_stance[contact,n]*4*g*total_mass, contact_force[contact][2,n])
+            prog.AddBoundingBoxConstraint(0, in_stance[contact,n], normalized_contact_force[contact][2,n])
+
+            prog.SetInitialGuess(normalized_contact_force[contact][2,n], 0.1*in_stance[contact,n])
 
     # Center of mass variables and constraints
     com = prog.NewContinuousVariables(3, N, "com")
@@ -165,7 +168,8 @@ def gait_optimization(robot_ctor):
         # which is a little more consistent with the LCP contact models.
         prog.AddConstraint(eq(com[:, n+1], com[:,n] + h[n]*comdot[:,n]))
         prog.AddConstraint(eq(comdot[:, n+1], comdot[:,n] + h[n]*comddot[:,n]))
-        prog.AddConstraint(eq(total_mass*comddot[:,n], sum(contact_force[i][:,n] for i in range(4)) + total_mass*gravity))
+        prog.AddConstraint(eq(total_mass*comddot[:,n],
+            sum(max_contact_force*normalized_contact_force[i][:,n] for i in range(num_contacts)) + total_mass*gravity))
 
     # Angular momentum (about the center of mass)
     H = prog.NewContinuousVariables(3, N, "H")
@@ -174,8 +178,8 @@ def gait_optimization(robot_ctor):
     prog.SetInitialGuess(Hdot, np.zeros((3,N-1)))
     # Hdot = sum_i cross(p_FootiW-com, contact_force_i)
     def angular_momentum_constraint(vars, context_index, active_contacts):
-        q, com, Hdot, contact_force = np.split(vars, [nq, nq+3, nq+6])
-        contact_force = contact_force.reshape(3, num_contacts, order='F')
+        q, com, Hdot, normalized_contact_force = np.split(vars, [nq, nq+3, nq+6])
+        contact_force = max_contact_force*(normalized_contact_force.reshape(3, num_contacts, order='F'))
         if isinstance(vars[0], AutoDiffXd):
             q = ExtractValue(q)
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
@@ -199,7 +203,7 @@ def gait_optimization(robot_ctor):
     for n in range(N-1):
         prog.AddConstraint(eq(H[:,n+1], H[:,n] + h[n]*Hdot[:,n]))
         active_contacts = np.where(in_stance[:,n])[0]
-        Fn = np.concatenate([contact_force[i][:,n] for i in range(num_contacts)])
+        Fn = np.concatenate([normalized_contact_force[i][:,n] for i in range(num_contacts)])
         prog.AddConstraint(partial(angular_momentum_constraint, context_index=n, active_contacts=active_contacts),
                 lb=np.zeros(3), ub=np.zeros(3),
                 vars=np.concatenate((q[:,n], com[:,n], Hdot[:,n], Fn)))
