@@ -8,6 +8,7 @@ by Hongkai Dai, Andrés Valenzuela and Russ Tedrake
 from LittleDog import LittleDog
 from Atlas import Atlas
 
+import notify2
 import pdb
 import time
 from functools import partial
@@ -341,6 +342,13 @@ def gait_optimization(robot_ctor):
     visualizer.stop_recording()
     visualizer.publish_recording()
 
+    notify2.init("Planner.py")
+    notify2.Notification("Planner.py", "Done").show()
+
+    if not result.is_success():
+        print(result.GetInfeasibleConstraintNames(prog))
+        pdb.set_trace()
+
 # Try them all!  The last two could use a little tuning.
 littledog_walking_trot = partial(LittleDog, gait="walking_trot")
 littledog_running_trot = partial(LittleDog, gait="running_trot")
@@ -352,4 +360,5 @@ littledog_bound = partial(LittleDog, gait="bound")
 
 gait_optimization(partial(Atlas, simplified=True))
 
-time.sleep(1e5)
+while True:
+    time.sleep(2)
