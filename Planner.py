@@ -52,6 +52,8 @@ def gait_optimization(robot_ctor):
     total_mass = robot.get_total_mass(context)
     gravity = plant.gravity_field().gravity_vector()
     g = 9.81
+    # max normal force assumed to be 4mg
+    max_contact_force = 4*g*total_mass
 
     contact_frame = robot.get_contact_frames()
 
@@ -130,8 +132,17 @@ def gait_optimization(robot_ctor):
 
     # Contact forces
     num_contacts = robot.get_num_contacts()
+    '''
+    Ordered as follows
+    [[[ contact0_x_t0, ... , contact0_x_tn],
+      [ contact0_y_t0, ... , contact0_y_tn],
+      [ contact0_z_t0, ... , contact0_z_tn]],
+     ...
+     [[ contactn_x_t0, ... , contactn_x_tn],
+      [ contactn_y_t0, ... , contactn_y_tn],
+      [ contactn_z_t0, ... , contactn_z_tn]]]
+    '''
     normalized_contact_force = [prog.NewContinuousVariables(3, N-1, f"contact{contact}_normalized_contact_force") for contact in range(num_contacts)]
-    max_contact_force = 4*g*total_mass
     for n in range(N-1):
         for contact in range(num_contacts):
             # Linear friction cone
@@ -140,8 +151,7 @@ def gait_optimization(robot_ctor):
             prog.AddLinearConstraint(normalized_contact_force[contact][1,n] <= mu*normalized_contact_force[contact][2,n])
             prog.AddLinearConstraint(-normalized_contact_force[contact][1,n] <= mu*normalized_contact_force[contact][2,n])
             # normal force >=0, normal_force == 0 if not in_stance
-            # max normal force assumed to be 4mg
-            prog.AddBoundingBoxConstraint(0, in_stance[contact,n], normalized_contact_force[contact][2,n])
+            prog.AddBoundingBoxConstraint(0.0, in_stance[contact,n], normalized_contact_force[contact][2,n])
 
             prog.SetInitialGuess(normalized_contact_force[contact][2,n], 0.1*in_stance[contact,n])
 
@@ -179,19 +189,24 @@ def gait_optimization(robot_ctor):
     # Hdot = sum_i cross(p_FootiW-com, contact_force_i)
     def angular_momentum_constraint(vars, context_index, active_contacts):
         q, com, Hdot, normalized_contact_force = np.split(vars, [nq, nq+3, nq+6])
+        '''
+        [[ contact0_x_tn, ... , contactn_x_tn ],
+         [ contact0_y_tn, ... , contactn_y_tn ],
+         [ contact0_z_tn, ... , contactn_z_tn ]]
+        '''
         contact_force = max_contact_force*(normalized_contact_force.reshape(3, num_contacts, order='F'))
         if isinstance(vars[0], AutoDiffXd):
             q = ExtractValue(q)
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
                 plant.SetPositions(context[context_index], q)
-            torque = np.zeros(3)
+            torque = np.zeros(3, dtype='object')
             for contact in active_contacts:
                 p_WF = plant.CalcPointsPositions(context[context_index], contact_frame[contact], [0,0,0], plant.world_frame())
                 Jq_WF = plant.CalcJacobianTranslationalVelocity(
                     context[context_index], JacobianWrtVariable.kQDot,
                     contact_frame[contact], [0, 0, 0], plant.world_frame(), plant.world_frame())
                 ad_p_WF = InitializeAutoDiff(p_WF, np.hstack((Jq_WF, np.zeros((3, 18)))))
-                torque = torque + np.cross(ad_p_WF.reshape(3) - com, contact_force[:,contact])
+                torque += np.cross(ad_p_WF.reshape(3) - com, contact_force[:,contact])
         else:
             if not np.array_equal(q, plant.GetPositions(context[context_index])):
                 plant.SetPositions(context[context_index], q)
@@ -203,6 +218,9 @@ def gait_optimization(robot_ctor):
     for n in range(N-1):
         prog.AddConstraint(eq(H[:,n+1], H[:,n] + h[n]*Hdot[:,n]))
         active_contacts = np.where(in_stance[:,n])[0]
+        '''
+        [ contact0_x_tn, contact0_y_tn, contact0_z_tn, ... , contactn_x_tn, contactn_y_tn, contactn_z_tn ]
+        '''
         Fn = np.concatenate([normalized_contact_force[i][:,n] for i in range(num_contacts)])
         prog.AddConstraint(partial(angular_momentum_constraint, context_index=n, active_contacts=active_contacts),
                 lb=np.zeros(3), ub=np.zeros(3),
